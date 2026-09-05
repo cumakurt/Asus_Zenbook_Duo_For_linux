@@ -2,31 +2,45 @@
 # Duo-exclusive workflow helpers (ScreenXpert-like gaps that Linux can cover).
 
 function zenbook-keyboard-bt-connected() {
-    if command -v bluetoothctl >/dev/null 2>&1; then
-        bluetoothctl devices Connected 2>/dev/null | grep -qi 'zenbook duo keyboard' && return 0
-        bluetoothctl info 2>/dev/null | grep -qi 'zenbook duo keyboard' && return 0
+    local mac
+    if ! command -v bluetoothctl >/dev/null 2>&1; then
+        return 1
     fi
-    return 1
+    mac=$(
+        bluetoothctl devices Connected 2>/dev/null |
+            awk 'BEGIN{IGNORECASE=1} /zenbook duo keyboard/ {print $2; exit}'
+    )
+    [[ -n "${mac}" ]]
 }
 
 function zenbook-keyboard-bt-battery() {
-    local bat
+    local bat mac
     if ! command -v bluetoothctl >/dev/null 2>&1; then
         return 1
     fi
     # Prefer a connected Duo keyboard device line, then Battery Percentage.
-    bat=$(
+    mac=$(
         bluetoothctl devices Connected 2>/dev/null |
             awk 'BEGIN{IGNORECASE=1} /zenbook duo keyboard/ {print $2; exit}'
     )
-    if [[ -z "${bat}" ]]; then
+    if [[ -z "${mac}" ]]; then
         return 1
     fi
-    bluetoothctl info "${bat}" 2>/dev/null |
-        awk -F'[:()]' 'BEGIN{IGNORECASE=1} /Battery Percentage/ {
-            gsub(/[^0-9]/, "", $2)
-            if ($2 != "") { print $2; exit }
-        }'
+    # bluetoothctl prints: Battery Percentage: 0x64 (100) — use the decimal in ().
+    bat=$(
+        bluetoothctl info "${mac}" 2>/dev/null |
+            awk 'BEGIN{IGNORECASE=1} /Battery Percentage/ {
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ /^\([0-9]+\)$/) {
+                        gsub(/[()]/, "", $i)
+                        print $i
+                        exit
+                    }
+                }
+            }'
+    )
+    [[ -n "${bat}" ]] || return 1
+    printf '%s\n' "${bat}"
 }
 
 function zenbook-print-status() {
@@ -106,7 +120,9 @@ Display:
   touch                  Remap dual OLED touch/stylus to eDP-1 / eDP-2 (X11)
 
 Keyboard:
-  kbb 0-3                Keyboard backlight level
+  kbb 0-3                Keyboard backlight level (USB/BT hidraw)
+  keyboard-heal          Re-enable Duo BT keyboard/touchpad; disable conflicting Mouse
+  bt-connect             One-shot BT connect for paired Duo keyboard (never disconnects)
   softkbd                Launch profile-preferred on-screen keyboard
 
 ACPI aliases:
@@ -137,10 +153,13 @@ function zenbook-set-bottom() {
 
     case "${action}" in
         on|enable)
+            if zenbook-keyboard-attached && [[ -z "${ZENBOOK_FORCE_BOTTOM:-}" ]]; then
+                echo "$(date) - MONITOR - ERROR: keyboard is docked; refusing to enable covered bottom panel (set ZENBOOK_FORCE_BOTTOM=1 to override)" >&2
+                return 1
+            fi
             if zenbook-keyboard-attached; then
                 echo "$(date) - MONITOR - WARNING: physical keyboard is docked; bottom panel may stay covered"
             fi
-            KEYBOARD_ATTACHED=false
             zenbook-enable-bottom-monitor
             ;;
         off|disable)
@@ -150,7 +169,10 @@ function zenbook-set-bottom() {
             if zenbook-output-active "${BOTTOM_OUTPUT}"; then
                 zenbook-disable-bottom-monitor
             else
-                KEYBOARD_ATTACHED=false
+                if zenbook-keyboard-attached && [[ -z "${ZENBOOK_FORCE_BOTTOM:-}" ]]; then
+                    echo "$(date) - MONITOR - ERROR: keyboard is docked; refusing to enable covered bottom panel (set ZENBOOK_FORCE_BOTTOM=1 to override)" >&2
+                    return 1
+                fi
                 zenbook-enable-bottom-monitor
             fi
             ;;
@@ -159,6 +181,12 @@ function zenbook-set-bottom() {
             return 1
             ;;
     esac
+    # Keep dock flag honest — CLI must not pretend the keyboard was removed.
+    if zenbook-keyboard-attached; then
+        KEYBOARD_ATTACHED=true
+    else
+        KEYBOARD_ATTACHED=false
+    fi
     MONITOR_COUNT=$(zenbook-monitor-count)
     zenbook-set-status
 }
@@ -209,24 +237,38 @@ function zenbook-share-mode() {
     case "${mode}" in
         extend|reset)
             SHARE_MODE=extend
-            KEYBOARD_ATTACHED=false
             if zenbook-keyboard-attached; then
                 KEYBOARD_ATTACHED=true
                 zenbook-check-monitor 1
             else
+                KEYBOARD_ATTACHED=false
                 zenbook-enable-bottom-monitor
                 zenbook-rotate-displays normal
             fi
             ;;
         duplicate|mirror)
+            if zenbook-keyboard-attached && [[ -z "${ZENBOOK_FORCE_BOTTOM:-}" ]]; then
+                echo "$(date) - SHARE - ERROR: keyboard is docked; refuse duplicate while bottom OLED is covered (ZENBOOK_FORCE_BOTTOM=1 to override)" >&2
+                return 1
+            fi
             SHARE_MODE=duplicate
             KEYBOARD_ATTACHED=false
+            if zenbook-keyboard-attached; then
+                KEYBOARD_ATTACHED=true
+            fi
             zenbook-mirror-bottom
             ;;
         facing|present)
-            # Face-to-face: guest-oriented layout (ScreenXpert "sharing" style).
+            # Face-to-face guest layout (approximate ScreenXpert sharing posture).
+            if zenbook-keyboard-attached && [[ -z "${ZENBOOK_FORCE_BOTTOM:-}" ]]; then
+                echo "$(date) - SHARE - ERROR: keyboard is docked; refuse facing layout while covered (ZENBOOK_FORCE_BOTTOM=1 to override)" >&2
+                return 1
+            fi
             SHARE_MODE=facing
             KEYBOARD_ATTACHED=false
+            if zenbook-keyboard-attached; then
+                KEYBOARD_ATTACHED=true
+            fi
             zenbook-enable-bottom-monitor || true
             zenbook-rotate-displays bottom-up
             ;;

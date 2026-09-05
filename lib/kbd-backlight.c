@@ -3,13 +3,6 @@
  *
  * Copyright (C) Cuma KURT
  * SPDX-License-Identifier: GPL-3.0-or-later
- *
- * Protocol derived from the BSD-2-Clause helper by Alesya Huzik (2024):
- * USB HID SET_REPORT (bmRequestType=0x21, bRequest=0x09, wValue=0x035A,
- * interface 4, 16-byte payload: 5A BA C5 C4 <level>).
- *
- * Uses Linux usbdevfs for docked (USB) keyboards, and falls back to
- * hidraw HIDIOCSFEATURE for Bluetooth (undocked) when possible.
  */
 
 #include <dirent.h>
@@ -258,25 +251,67 @@ static int parse_hid_id(const char *uevent, unsigned int *bus,
 static int set_backlight_hidraw_node(const char *devnode, int level)
 {
 	unsigned char data[WLENGTH];
+	unsigned char short_data[5];
 	int fd;
 	int rc;
 
 	fill_payload(data, level);
+	memset(short_data, 0, sizeof(short_data));
+	short_data[0] = REPORT_ID;
+	short_data[1] = 0xBA;
+	short_data[2] = 0xC5;
+	short_data[3] = 0xC4;
+	short_data[4] = (unsigned char)level;
 
 	fd = open(devnode, O_RDWR);
 	if (fd < 0) {
 		return 1;
 	}
 
+	/* Prefer feature report (USB/ASUS protocol). */
 	rc = ioctl(fd, HIDIOCSFEATURE(WLENGTH), data);
-	if (rc < 0) {
+	if (rc >= 0) {
+		printf("hidraw FEATURE backlight set to %d via %s.\n", level, devnode);
 		close(fd);
-		return 1;
+		return 0;
 	}
 
-	printf("hidraw backlight set to %d via %s.\n", level, devnode);
+	/* Some BT stacks accept a short feature report. */
+	rc = ioctl(fd, HIDIOCSFEATURE(sizeof(short_data)), short_data);
+	if (rc >= 0) {
+		printf("hidraw short FEATURE backlight set to %d via %s.\n", level, devnode);
+		close(fd);
+		return 0;
+	}
+
+	/* Fallback: interrupt/output write (works on some uhid bindings). */
+	if (write(fd, data, WLENGTH) == WLENGTH ||
+	    write(fd, short_data, sizeof(short_data)) == (ssize_t)sizeof(short_data)) {
+		printf("hidraw WRITE backlight set to %d via %s.\n", level, devnode);
+		close(fd);
+		return 0;
+	}
+
+	/*
+	 * Bluetooth GATT captures use ba c5 c4 <level> without HID report id 0x5A.
+	 * Some uhid endpoints accept the same bare payload on hidraw write.
+	 */
+	{
+		unsigned char bare[4];
+
+		bare[0] = 0xBA;
+		bare[1] = 0xC5;
+		bare[2] = 0xC4;
+		bare[3] = (unsigned char)level;
+		if (write(fd, bare, sizeof(bare)) == (ssize_t)sizeof(bare)) {
+			printf("hidraw BARE WRITE backlight set to %d via %s.\n", level, devnode);
+			close(fd);
+			return 0;
+		}
+	}
+
 	close(fd);
-	return 0;
+	return 1;
 }
 
 static int set_backlight_hidraw(unsigned int vendor_id, unsigned int product_id,
@@ -375,15 +410,18 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/*
+	 * Prefer hidraw first: USBDEVFS claim/release of the vendor interface can
+	 * briefly tear down HID input and leave the Duo keyboard unresponsive.
+	 */
+	if (set_backlight_hidraw(vendor_id, product_id, level) == 0) {
+		return 0;
+	}
+
 	if (find_usb_devnode(vendor_id, product_id, devnode, sizeof(devnode)) == 0) {
 		if (set_backlight_usb(devnode, level) == 0) {
 			return 0;
 		}
-	}
-
-	/* Docked USB control can fail; undocked keyboards only appear as hidraw. */
-	if (set_backlight_hidraw(vendor_id, product_id, level) == 0) {
-		return 0;
 	}
 
 	fprintf(stderr,

@@ -19,7 +19,7 @@ BOTTOM_OUTPUT=${BOTTOM_OUTPUT:-eDP-2}
 TOP_MODE=${TOP_MODE:-2880x1800}
 BOTTOM_MODE=${BOTTOM_MODE:-2880x1800}
 TOP_RATE=${TOP_RATE:-120}
-BOTTOM_RATE=${BOTTOM_RATE:-60}
+BOTTOM_RATE=${BOTTOM_RATE:-120}
 
 # Prefer per-user runtime dir when available (avoids /tmp symlink races).
 if [[ -z "${RUNTIME_DIR:-}" ]]; then
@@ -34,6 +34,8 @@ DISPLAY_LOCK=${DISPLAY_LOCK:-${RUNTIME_DIR}/display.lock}
 STATUS_LOCK=${STATUS_LOCK:-${RUNTIME_DIR}/status.lock}
 BOTTOM_WINDOWS_STATE=${BOTTOM_WINDOWS_STATE:-${RUNTIME_DIR}/bottom-windows}
 STATUS_FILE=${STATUS_FILE:-${RUNTIME_DIR}/status}
+DAEMON_LOCK=${DAEMON_LOCK:-${RUNTIME_DIR}/daemon.lock}
+DETACH_BACKLIGHT_PID_FILE=${DETACH_BACKLIGHT_PID_FILE:-${RUNTIME_DIR}/detach-backlight.pid}
 LOG_FILE=${LOG_FILE:-${RUNTIME_DIR}/zenbook.log}
 
 # Auto-detect top backlight when possible; fall back to intel_backlight.
@@ -58,6 +60,9 @@ KEYBOARD_PRODUCT_NAME=${KEYBOARD_PRODUCT_NAME:-ASUS Zenbook Duo Keyboard}
 KEYBOARD_USB_IDS=${KEYBOARD_USB_IDS:-0b05:1bf2 0b05:1b2c}
 # Bluetooth product IDs used when the keyboard is undocked.
 KEYBOARD_BT_IDS=${KEYBOARD_BT_IDS:-0b05:1bf3 0b05:1b2d}
+# Bluetooth MAC for undock host-connect (optional; auto-detected from bluetoothctl).
+KEYBOARD_BT_MAC=${KEYBOARD_BT_MAC:-}
+
 
 # Touchscreen / stylus name substrings for xinput map-to-output (UX8406CA).
 # ELAN9008 is typically the top OLED; ELAN9009 the bottom OLED.

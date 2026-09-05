@@ -32,7 +32,7 @@ This project closes the gap between ASUS dual-panel hardware behaviour and what 
 | Device rotated    | Both panels rotated and repositioned together |
 
 
-Default panel modes: `2880x1800@120` (top), `2880x1800@60` (bottom).
+Default panel modes: `2880x1800@120` (top and bottom; UX8406CA native).
 
 ### 3. Windows jump or disappear when the bottom panel turns off (X11)
 
@@ -56,7 +56,7 @@ Default panel modes: `2880x1800@120` (top), `2880x1800@60` (bottom).
 
 **Problem:** The Duo keyboard backlight is driven by a vendor USB HID `SET_REPORT` command. There is no portable desktop setting for levels `0–3`, and older approaches ran a user-writable Python script via passwordless `sudo` (unsafe).
 
-**Solution:** A small native C helper (`kbd-backlight`) sends the same HID report through Linux `usbdevfs` when docked, and falls back to `hidraw` feature reports when the keyboard is on Bluetooth. Access is granted with a `udev` `uaccess` rule for the active seat — no NOPASSWD sudoers entry. On undock the helper retries max backlight (`DETACH_BACKLIGHT`, default `3`) so keys stay visible in the dark.
+**Solution:** A small native C helper (`kbd-backlight`) sends the same HID report through `hidraw` first (safer for typing), falling back to USB `usbdevfs` when docked. Access uses a `udev` `uaccess` rule matching USB and Bluetooth uhid parents (`KERNELS=="0005:VID:PID.*"`). On undock the helper only unblocks Bluetooth (`rfkill`) and leaves HOGP to BlueZ — it does **not** call `bluetoothctl` connect/disconnect or GATT (those break HID: Connected without keys). When BT hidraw appears it may set `DETACH_BACKLIGHT` (default `3`) and re-enable Duo xinput nodes.
 
 ### 6. Wi-Fi / Bluetooth state fights the keyboard dock workflow
 
@@ -131,7 +131,7 @@ This helper targets **Duo dual-OLED + detachable keyboard** behaviour. It is **n
 | USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes                                        |
 | Bottom OLED enable/disable with dock                        | Yes                                        |
 | Stacked dual-panel layout (`eDP-1` / `eDP-2`)               | Yes                                        |
-| Native modes (default 2880×1800 @120 / @60)                 | Yes                                        |
+| Native modes (default 2880×1800 @120 / @120) | Yes |
 | Keyboard backlight 0–3 (USB HID)                            | Yes                                        |
 | Dual-panel brightness sync                                  | Yes                                        |
 | Accelerometer rotation layouts                              | Yes                                        |
@@ -279,9 +279,10 @@ Examples:
 3. Installs modules to `/usr/local/lib/zenbook/` and links `/usr/local/bin/zenbook`
 4. Compiles `lib/kbd-backlight.c` → `kbd-backlight`
 5. Writes XDG autostart for the detected desktop
-6. Installs udev `uaccess` for the Duo keyboard
-7. Removes obsolete systemd/sudoers hooks from earlier helper installs
-8. Starts the helper in the current graphical session when possible
+6. Installs udev `uaccess` for USB + Bluetooth hidraw (`KERNELS==0005:…`)  
+7. Keeps BlueZ `ExportClaimedServices` read-only (required for BT keyboard HID)  
+8. Removes obsolete systemd/sudoers hooks from earlier helper installs  
+9. Starts the helper in the current graphical session when possible
 
 ---
 
@@ -310,7 +311,8 @@ zenbook help
 zenbook status                  # dock, panels, backend, BT battery, locks
 zenbook detect                  # DE / session / profile / capability matrix
 zenbook touch                   # remap dual OLED touch/stylus (X11)
-zenbook kbb 2                   # keyboard backlight 0–3
+zenbook keyboard-heal           # re-enable Duo BT keyboard/touchpad nodes in X
+zenbook kbb 2                   # keyboard backlight 0–3 (USB or BT hidraw)
 zenbook softkbd                 # launch onboard/squeekboard if installed
 zenbook bottom on|off|toggle    # force second screen
 zenbook share extend|duplicate|facing|reset
@@ -330,7 +332,7 @@ export BOTTOM_OUTPUT=eDP-2
 export TOP_MODE=2880x1800
 export BOTTOM_MODE=2880x1800
 export TOP_RATE=120
-export BOTTOM_RATE=60
+export BOTTOM_RATE=120
 export DEFAULT_BACKLIGHT=3
 export ZENBOOK_BACKEND_OVERRIDE=x11   # force backend (debug)
 ```
@@ -387,9 +389,25 @@ The keyboard USB device is tagged for the active local seat so the backlight hel
 
 **Keyboard backlight does nothing**  
 
-- Replug the keyboard after install so udev `uaccess` applies.  
-- Confirm `lsusb` shows `ASUS Zenbook Duo Keyboard` (VID:PID `0b05:1bf2`).  
-- Ensure `/usr/local/lib/zenbook/lib/kbd-backlight` is executable.
+- Replug the keyboard (USB) or toggle Bluetooth after install so udev `uaccess` applies.  
+- Docked: `lsusb` should show `ASUS Zenbook Duo Keyboard` (`0b05:1bf2`).  
+- Undocked: need BT HOGP hidraw (`HID_ID=0005:0B05:1BF3`). `getfacl /dev/hidraw*` should list your user.  
+- Do **not** enable BlueZ `ExportClaimedServices=read-write` / GATT writes — they break typing.  
+- Ensure `/usr/local/lib/zenbook/lib/kbd-backlight` is executable.  
+- Manual: `zenbook kbb 3`.
+
+**Undocked keys/touchpad die / BT keeps reconnecting**  
+
+- Log proof: after bluetoothd restart / disconnect loops, BlueZ no longer auto-HOGPs this keyboard (16:19 undock: zero BlueZ activity for ~35s).  
+- Current helper: brief auto wait, then **one** `bluetoothctl connect` — **never** disconnect/GATT. Success = uhid/`xinput` without Primax, not merely Connected.  
+- Reinstall: `./install.sh`. Undock and wait ~15s. Log should show `BT connect once` then `BT HID ready`.  
+- Keyboard left-side BT switch ON; paired/trusted.  
+- Conflicting `Keyboard Mouse` node is disabled when Touchpad appears (`ZENBOOK_KEEP_DUO_MOUSE=1` to keep it).
+
+**Undocked touchpad does nothing**  
+
+- Confirm BT HID: `bluetoothctl devices Connected` lists the Duo keyboard **and** `xinput` shows non-Primax Duo Touchpad.  
+- Then `zenbook keyboard-heal`.
 
 **Brightness sync only on one panel**  
 

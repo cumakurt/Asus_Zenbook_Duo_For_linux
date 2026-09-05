@@ -68,6 +68,11 @@ function zenbook-x11-map-touch-inputs() {
 
 # Backend entry point: only map when the active profile supports X11 touch.
 function zenbook-map-touch-inputs() {
+    # After undock, heal Duo BT clickpad before remapping panel digitizers.
+    if declare -F zenbook-heal-keyboard-inputs >/dev/null 2>&1; then
+        zenbook-heal-keyboard-inputs || true
+    fi
+
     case "${ZENBOOK_PROFILE_TOUCH:-${ZENBOOK_BACKEND:-}}" in
         x11)
             zenbook-x11-map-touch-inputs

@@ -34,7 +34,7 @@ function zenbook-output-active() {
     printf '%s\n' "${show}" | awk -v output="${output}" '
         /^Logical monitors:/ { in_logical=1; next }
         /^Monitors:/ { in_logical=0 }
-        in_logical && index($0, output) { found=1 }
+        in_logical && $0 ~ ("[[:space:]]" output "([^0-9]|$)") { found=1 }
         END { exit(found ? 0 : 1) }
     '
 }
@@ -47,7 +47,7 @@ function zenbook-output-connected() {
     if printf '%s\n' "${show}" | awk -v output="${output}" '
         /^Monitors:/ { in_mon=1; next }
         /^Logical monitors:/ { in_mon=0 }
-        in_mon && index($0, output) { found=1 }
+        in_mon && $0 ~ ("[[:space:]]" output "([^0-9]|$)") { found=1 }
         END { exit(found ? 0 : 1) }
     '; then
         return 0

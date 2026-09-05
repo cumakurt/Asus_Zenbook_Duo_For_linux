@@ -10,7 +10,7 @@ INSTALL_ROOT=/usr/local/lib/zenbook
 INSTALL_LOCATION=/usr/local/bin/zenbook
 DEFAULT_BACKLIGHT=3
 DRY_RUN=false
-STEP_TOTAL=7
+STEP_TOTAL=8
 STEP_CURRENT=0
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -310,14 +310,21 @@ AUTOSTART_FILE=$(zenbook-write-autostart "${INSTALL_LOCATION}" "${AUTOSTART_DIR}
 rm -f "${AUTOSTART_DIR}/zenbook-duo.desktop" 2>/dev/null || true
 ok "${AUTOSTART_FILE#"${HOME}"/}"
 
-step "USB keyboard access"
+step "USB/BT keyboard access"
 if zenbook-configure-udev-keyboard "${UDEV_RULE}"; then
-    ok "udev uaccess rule installed"
+    ok "udev uaccess rule installed (USB + Bluetooth hidraw)"
 else
-    ok "udev rule installed"
-    warn "Keyboard not plugged in yet — replug after install if needed"
+    ok "udev rule installed (USB + Bluetooth hidraw)"
+    warn "Keyboard not plugged in yet — replug or re-pair BT after install if needed"
 fi
 sudo rm -f /etc/udev/rules.d/70-zenbook-duo-keyboard.rules 2>/dev/null || true
+
+step "Bluetooth HID-safe settings"
+if zenbook-configure-bluez-gatt; then
+    ok "BlueZ ExportClaimedServices kept read-only (BT keyboard HID)"
+else
+    warn "Could not update /etc/bluetooth/main.conf"
+fi
 
 step "Cleanup obsolete hooks"
 zenbook-cleanup-obsolete-hooks "${TARGET_USER}" >/dev/null 2>&1 || die "Obsolete-hooks cleanup failed"
@@ -333,16 +340,26 @@ if session_can_start_helper; then
         runtime_dir=/tmp/zenbook
     fi
 
+    # Match the installed entrypoint and any lingering repo-path daemons.
     while read -r pid; do
         [[ -n "${pid}" && "${pid}" != "$$" ]] || continue
         kill "${pid}" 2>/dev/null || true
     done < <(
-        pgrep -u "${TARGET_UID}" -f "^${INSTALL_LOCATION}( |$)" 2>/dev/null || true
-        pgrep -u "${TARGET_UID}" -f "^/usr/local/lib/zenbook/zenbook\\.sh( |$)" 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f '(^|/)zenbook(\\.sh)?( |$)' 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f '/usr/local/(bin|lib)/zenbook' 2>/dev/null || true
     )
+    sleep 0.6
+    while read -r pid; do
+        [[ -n "${pid}" && "${pid}" != "$$" ]] || continue
+        kill -9 "${pid}" 2>/dev/null || true
+    done < <(
+        pgrep -u "${TARGET_UID}" -f '(^|/)zenbook(\\.sh)?( |$)' 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f '/usr/local/(bin|lib)/zenbook' 2>/dev/null || true
+    )
+    pkill -u "${TARGET_UID}" -f 'tee -a .*/zenbook/zenbook\\.log' 2>/dev/null || true
 
     mkdir -m 700 -p "${runtime_dir}" 2>/dev/null || sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0700 "${runtime_dir}"
-    rm -f "${runtime_dir}/status" 2>/dev/null || true
+    rm -f "${runtime_dir}/status" "${runtime_dir}/daemon.lock" "${runtime_dir}/detach-backlight.pid" 2>/dev/null || true
     sudo chown -R "${TARGET_USER}:${TARGET_GROUP}" "${runtime_dir}" 2>/dev/null || true
     nohup "${INSTALL_LOCATION}" >"${runtime_dir}/zenbook-session.log" 2>&1 &
     disown || true

@@ -13,6 +13,7 @@ ZENBOOK_PIDS=()
 
 zenbook-cleanup() {
     local pid
+    zenbook-cancel-detach-backlight 2>/dev/null || true
     for pid in "${ZENBOOK_PIDS[@]:-}"; do
         kill "${pid}" 2>/dev/null || true
     done
@@ -30,10 +31,7 @@ trap 'zenbook-cleanup' EXIT
 . "${ZENBOOK_LIB_DIR}/detect/desktop.sh"
 
 zenbook-detect-os >/dev/null 2>&1 || true
-if ! zenbook-detect-desktop; then
-    echo "$(date) - FATAL - Unsupported desktop/session for Zenbook Duo helper" >&2
-    exit 1
-fi
+zenbook-detect-desktop || true
 
 BACKEND_DIR="${ZENBOOK_LIB_DIR}/backend/${ZENBOOK_BACKEND}"
 if [[ ! -d "${BACKEND_DIR}" ]]; then
@@ -67,14 +65,26 @@ zenbook-load-profile
 # shellcheck source=/dev/null
 . "${ZENBOOK_LIB_DIR}/cli.sh"
 
-if [[ -e "${RUNTIME_DIR}" && ! -d "${RUNTIME_DIR}" ]]; then
-    echo "$(date) - FATAL - Runtime path exists and is not a directory: ${RUNTIME_DIR}" >&2
+if ! zenbook-ensure-runtime-dir; then
     exit 1
 fi
-mkdir -m 700 -p "${RUNTIME_DIR}"
-chmod 700 "${RUNTIME_DIR}" 2>/dev/null || true
 
 echo "$(date) - INIT - OS=${ZENBOOK_OS_ID} DE=${ZENBOOK_DE} session=${ZENBOOK_SESSION} compositor=${ZENBOOK_COMPOSITOR} backend=${ZENBOOK_BACKEND} profile=${ZENBOOK_PROFILE}"
+
+function zenbook-acquire-daemon-lock() {
+    local lock_fd
+    if ! exec {lock_fd}>"${DAEMON_LOCK}"; then
+        echo "$(date) - FATAL - cannot open daemon lock ${DAEMON_LOCK}" >&2
+        return 1
+    fi
+    if ! flock -n "${lock_fd}"; then
+        echo "$(date) - FATAL - another zenbook daemon is already running" >&2
+        return 1
+    fi
+    # Keep lock_fd open for the lifetime of this process.
+    ZENBOOK_DAEMON_LOCK_FD=${lock_fd}
+    return 0
+}
 
 function zenbook-init-session-state() {
     # Preserve remembered radio preferences across CLI invocations.
@@ -100,6 +110,9 @@ function main() {
         echo "$(date) - FATAL - Required display tool '${tool}' is missing for backend=${ZENBOOK_BACKEND}" >&2
         exit 1
     fi
+    if ! zenbook-acquire-daemon-lock; then
+        exit 1
+    fi
     if [[ "${ZENBOOK_BACKEND}" == x11 ]] && ! command -v wmctrl >/dev/null 2>&1; then
         echo "$(date) - WINDOW - wmctrl not found; install it for deterministic bottom->top window relocation"
     fi
@@ -117,7 +130,7 @@ function main() {
     MONITOR_COUNT=$(zenbook-monitor-count)
     zenbook-set-status
 
-    zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" || true
+    zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "auto" || true
     # Force apply on startup so a docked keyboard disables eDP-2 immediately.
     zenbook-check-monitor 1
     zenbook-map-touch-inputs || true

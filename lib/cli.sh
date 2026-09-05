@@ -20,23 +20,61 @@ function zenbook-cli() {
     ;;
     pre|hibernate|shutdown)
         echo "$(date) - ACPI - $*"
-        zenbook-set-kb-backlight 0
+        if zenbook-keyboard-attached; then
+            zenbook-set-kb-backlight 0 "usb" || true
+        else
+            zenbook-set-kb-backlight 0 "bt" || true
+        fi
     ;;
     post|thaw|boot)
         echo "$(date) - ACPI - $*"
-        zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}"
+        if zenbook-keyboard-attached; then
+            zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "usb" || true
+        else
+            zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "bt" || true
+        fi
         zenbook-check-monitor 1
         zenbook-map-touch-inputs || true
     ;;
     kbb)
+        if [[ ! "${2:-}" =~ ^[0-3]$ ]]; then
+            echo "$(date) - KEYBOARD - ERROR: kbb requires level 0-3" >&2
+            return 1
+        fi
         echo "$(date) - KEYBOARD - Backlight = ${2}"
-        zenbook-set-kb-backlight "${2}"
+        if zenbook-keyboard-attached; then
+            zenbook-set-kb-backlight "${2}" "usb"
+        else
+            zenbook-set-kb-backlight "${2}" "bt"
+        fi
     ;;
     softkbd|osk)
         zenbook-softkbd
     ;;
     touch|touchmap)
         zenbook-map-touch-inputs
+    ;;
+    keyboard-heal|kbd-heal|heal-kbd)
+        zenbook-heal-keyboard-inputs
+    ;;
+    bt-connect|keyboard-bt)
+        # Safe host connect for paired Duo keyboard (never disconnects).
+        local mac
+        if zenbook-keyboard-attached; then
+            echo "$(date) - KEYBOARD - USB docked; skip BT connect"
+            return 0
+        fi
+        mac=$(zenbook-keyboard-bt-mac 2>/dev/null || true)
+        if [[ -z "${mac}" ]]; then
+            echo "$(date) - KEYBOARD - ERROR: Duo BT MAC not found" >&2
+            return 1
+        fi
+        zenbook-bt-connect-once "${mac}" || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            zenbook-bt-hid-ready && break
+            sleep 0.5
+        done
+        zenbook-heal-keyboard-inputs
     ;;
     bottom)
         zenbook-set-bottom "${2:-toggle}"

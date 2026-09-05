@@ -1,5 +1,5 @@
 #!/bin/bash
-# USB / hidraw uaccess rules for the detachable Zenbook Duo keyboard.
+# USB / hidraw / input udev rules for the detachable Zenbook Duo keyboard.
 
 zenbook-configure-udev-keyboard() {
     local udev_rule="${1:-/etc/udev/rules.d/70-zenbook-keyboard.rules}"
@@ -20,11 +20,10 @@ zenbook-configure-udev-keyboard() {
     fi
 
     {
-        echo '# ASUS Zenbook Duo detachable keyboard - allow the active local session access'
-        # Exact product string used by UX8406CA Primax docks.
+        echo '# ASUS Zenbook Duo detachable keyboard - session access'
+        echo '# USB product strings (docked)'
         printf 'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{product}=="%s", TAG+="uaccess"\n' \
             "${product_name}"
-        # Shorter legacy product string some images/docs still use.
         if [[ "${product_name}" != "Zenbook Duo Keyboard" ]]; then
             printf 'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{product}=="Zenbook Duo Keyboard", TAG+="uaccess"\n'
         fi
@@ -37,14 +36,20 @@ zenbook-configure-udev-keyboard() {
                 *" ${vendor,,}:${product,,} "*) continue ;;
             esac
             seen_ids+=" ${vendor,,}:${product,,}"
+
             printf 'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s", TAG+="uaccess"\n' \
                 "${vendor,,}" "${product,,}"
-            # hidraw is required for backlight when the keyboard is on Bluetooth.
             printf 'KERNEL=="hidraw*", ATTRS{idVendor}=="%s", ATTRS{idProduct}=="%s", TAG+="uaccess"\n' \
                 "${vendor,,}" "${product,,}"
+
+            vendor=${vendor^^}
+            product=${product^^}
+            printf 'KERNEL=="hidraw*", SUBSYSTEMS=="hid", KERNELS=="0003:%s:%s.*", TAG+="uaccess"\n' \
+                "${vendor}" "${product}"
+            printf 'KERNEL=="hidraw*", SUBSYSTEMS=="hid", KERNELS=="0005:%s:%s.*", TAG+="uaccess"\n' \
+                "${vendor}" "${product}"
         done
 
-        # Also tag whatever is currently plugged in if it was not already listed.
         if [[ -n "${keyboard_vendor}" && -n "${keyboard_product}" ]]; then
             case " ${seen_ids} " in
                 *" ${keyboard_vendor,,}:${keyboard_product,,} "*) ;;
@@ -53,6 +58,10 @@ zenbook-configure-udev-keyboard() {
                         "${keyboard_vendor,,}" "${keyboard_product,,}"
                     printf 'KERNEL=="hidraw*", ATTRS{idVendor}=="%s", ATTRS{idProduct}=="%s", TAG+="uaccess"\n' \
                         "${keyboard_vendor,,}" "${keyboard_product,,}"
+                    printf 'KERNEL=="hidraw*", SUBSYSTEMS=="hid", KERNELS=="0003:%s:%s.*", TAG+="uaccess"\n' \
+                        "${keyboard_vendor^^}" "${keyboard_product^^}"
+                    printf 'KERNEL=="hidraw*", SUBSYSTEMS=="hid", KERNELS=="0005:%s:%s.*", TAG+="uaccess"\n' \
+                        "${keyboard_vendor^^}" "${keyboard_product^^}"
                     ;;
             esac
         fi
@@ -62,7 +71,33 @@ zenbook-configure-udev-keyboard() {
     sudo udevadm control --reload-rules >/dev/null
     sudo udevadm trigger --subsystem-match=usb --action=add >/dev/null 2>&1 || true
     sudo udevadm trigger --subsystem-match=hidraw --action=add >/dev/null 2>&1 || true
+    sudo udevadm trigger --subsystem-match=input --action=add >/dev/null 2>&1 || true
 
-    # Return whether the keyboard was visible during setup (0=yes, 1=no).
     [[ -n "${keyboard_vendor}" && -n "${keyboard_product}" ]]
+}
+
+# GATT WriteValue to claimed HID services breaks BlueZ HOGP input on this keyboard
+# (Connected=yes but no uhid/xinput). Keep ExportClaimedServices read-only.
+zenbook-configure-bluez-gatt() {
+    local conf="${1:-/etc/bluetooth/main.conf}"
+    local tmp changed=0
+
+    [[ -f "${conf}" ]] || return 1
+
+    if grep -qE '^[[:space:]]*ExportClaimedServices[[:space:]]*=[[:space:]]*read-write' "${conf}"; then
+        tmp=$(mktemp)
+        sed -E 's/^[[:space:]]*ExportClaimedServices[[:space:]]*=.*/#ExportClaimedServices = read-only/' \
+            "${conf}" > "${tmp}"
+        sudo cp "${tmp}" "${conf}"
+        rm -f "${tmp}"
+        changed=1
+        echo "BlueZ: reverted ExportClaimedServices to read-only (required for BT keyboard HID)"
+    fi
+
+    if [[ "${changed}" -eq 1 ]]; then
+        # Avoid bluetoothd restart unless we actually flipped the setting —
+        # restarts drop HOGP links and leave the Duo keyboard needing a fresh connect.
+        sudo systemctl try-reload-or-restart bluetooth.service >/dev/null 2>&1 || true
+    fi
+    return 0
 }
