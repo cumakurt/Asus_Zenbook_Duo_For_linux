@@ -248,7 +248,15 @@ static int parse_hid_id(const char *uevent, unsigned int *bus,
 	return 0;
 }
 
-static int set_backlight_hidraw_node(const char *devnode, int level)
+/*
+ * mode 0: FEATURE reports only (real ASUS protocol; lights the LEDs).
+ * mode 1: interrupt/output write fallback on keyboard iface only.
+ *
+ * Never treat a WRITE success on hid-multitouch as done — the kernel accepts
+ * the bytes but the Duo backlight lives on the hid-generic keyboard interface.
+ * Do not use BlueZ GATT here (that previously broke HOGP input).
+ */
+static int set_backlight_hidraw_node(const char *devnode, int level, int mode)
 {
 	unsigned char data[WLENGTH];
 	unsigned char short_data[5];
@@ -268,23 +276,24 @@ static int set_backlight_hidraw_node(const char *devnode, int level)
 		return 1;
 	}
 
-	/* Prefer feature report (USB/ASUS protocol). */
-	rc = ioctl(fd, HIDIOCSFEATURE(WLENGTH), data);
-	if (rc >= 0) {
-		printf("hidraw FEATURE backlight set to %d via %s.\n", level, devnode);
+	if (mode == 0) {
+		rc = ioctl(fd, HIDIOCSFEATURE(WLENGTH), data);
+		if (rc >= 0) {
+			printf("hidraw FEATURE backlight set to %d via %s.\n", level, devnode);
+			close(fd);
+			return 0;
+		}
+
+		rc = ioctl(fd, HIDIOCSFEATURE(sizeof(short_data)), short_data);
+		if (rc >= 0) {
+			printf("hidraw short FEATURE backlight set to %d via %s.\n", level, devnode);
+			close(fd);
+			return 0;
+		}
 		close(fd);
-		return 0;
+		return 1;
 	}
 
-	/* Some BT stacks accept a short feature report. */
-	rc = ioctl(fd, HIDIOCSFEATURE(sizeof(short_data)), short_data);
-	if (rc >= 0) {
-		printf("hidraw short FEATURE backlight set to %d via %s.\n", level, devnode);
-		close(fd);
-		return 0;
-	}
-
-	/* Fallback: interrupt/output write (works on some uhid bindings). */
 	if (write(fd, data, WLENGTH) == WLENGTH ||
 	    write(fd, short_data, sizeof(short_data)) == (ssize_t)sizeof(short_data)) {
 		printf("hidraw WRITE backlight set to %d via %s.\n", level, devnode);
@@ -292,26 +301,13 @@ static int set_backlight_hidraw_node(const char *devnode, int level)
 		return 0;
 	}
 
-	/*
-	 * Bluetooth GATT captures use ba c5 c4 <level> without HID report id 0x5A.
-	 * Some uhid endpoints accept the same bare payload on hidraw write.
-	 */
-	{
-		unsigned char bare[4];
-
-		bare[0] = 0xBA;
-		bare[1] = 0xC5;
-		bare[2] = 0xC4;
-		bare[3] = (unsigned char)level;
-		if (write(fd, bare, sizeof(bare)) == (ssize_t)sizeof(bare)) {
-			printf("hidraw BARE WRITE backlight set to %d via %s.\n", level, devnode);
-			close(fd);
-			return 0;
-		}
-	}
-
 	close(fd);
 	return 1;
+}
+
+static int hidraw_uevent_is_multitouch(const char *uevent)
+{
+	return strstr(uevent, "DRIVER=hid-multitouch") != NULL;
 }
 
 static int set_backlight_hidraw(unsigned int vendor_id, unsigned int product_id,
@@ -319,16 +315,18 @@ static int set_backlight_hidraw(unsigned int vendor_id, unsigned int product_id,
 {
 	DIR *dir = opendir("/sys/class/hidraw");
 	struct dirent *ent;
-	int matched = 0;
+	char nodes[8][PATH_MAX];
+	char uevents[8][512];
+	int count = 0;
+	int i;
+	int pass;
 
 	if (!dir) {
 		return 1;
 	}
 
-	while ((ent = readdir(dir)) != NULL) {
+	while ((ent = readdir(dir)) != NULL && count < 8) {
 		char uevent_path[PATH_MAX];
-		char node[PATH_MAX];
-		char uevent[512];
 		FILE *fp;
 		size_t n;
 		unsigned int bus = 0;
@@ -345,30 +343,57 @@ static int set_backlight_hidraw(unsigned int vendor_id, unsigned int product_id,
 		if (!fp) {
 			continue;
 		}
-		n = fread(uevent, 1, sizeof(uevent) - 1, fp);
+		n = fread(uevents[count], 1, sizeof(uevents[count]) - 1, fp);
 		fclose(fp);
 		if (n == 0) {
 			continue;
 		}
-		uevent[n] = '\0';
+		uevents[count][n] = '\0';
 
-		if (parse_hid_id(uevent, &bus, &vid, &pid) != 0) {
+		if (parse_hid_id(uevents[count], &bus, &vid, &pid) != 0) {
 			continue;
 		}
 		if (vid != vendor_id || pid != product_id) {
 			continue;
 		}
 
-		matched = 1;
-		snprintf(node, sizeof(node), "/dev/%s", ent->d_name);
-		if (set_backlight_hidraw_node(node, level) == 0) {
-			closedir(dir);
+		snprintf(nodes[count], sizeof(nodes[count]), "/dev/%s", ent->d_name);
+		count++;
+	}
+	closedir(dir);
+
+	if (count == 0) {
+		return 1;
+	}
+
+	/* Pass 0: FEATURE on keyboard iface first, then any remaining. */
+	for (pass = 0; pass < 2; pass++) {
+		for (i = 0; i < count; i++) {
+			int multi = hidraw_uevent_is_multitouch(uevents[i]);
+
+			if (pass == 0 && multi) {
+				continue;
+			}
+			if (pass == 1 && !multi) {
+				continue;
+			}
+			if (set_backlight_hidraw_node(nodes[i], level, 0) == 0) {
+				return 0;
+			}
+		}
+	}
+
+	/* Pass 1: WRITE only on non-multitouch (avoid false-positive success). */
+	for (i = 0; i < count; i++) {
+		if (hidraw_uevent_is_multitouch(uevents[i])) {
+			continue;
+		}
+		if (set_backlight_hidraw_node(nodes[i], level, 1) == 0) {
 			return 0;
 		}
 	}
 
-	closedir(dir);
-	return matched ? 1 : 1;
+	return 1;
 }
 
 int main(int argc, char **argv)

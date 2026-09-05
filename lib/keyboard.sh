@@ -52,13 +52,20 @@ function zenbook-kbd-backlight-bin() {
 function zenbook-set-kb-backlight-hid() {
     local level="${1}"
     local usb_id="${2}"
-    local backlight_bin vendor_id product_id
+    local backlight_bin vendor_id product_id out rc
 
     [[ "${usb_id}" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]] || return 1
     backlight_bin=$(zenbook-kbd-backlight-bin) || return 1
     vendor_id=${usb_id%:*}
     product_id=${usb_id#*:}
-    "${backlight_bin}" "${level}" "0x${vendor_id}" "0x${product_id}" >/dev/null 2>&1
+    # hidraw FEATURE only — never GATT / never BT reconnect for backlight.
+    out=$("${backlight_bin}" "${level}" "0x${vendor_id}" "0x${product_id}" 2>&1)
+    rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
+        echo "$(date) - KEYBOARD - ${out}"
+        return 0
+    fi
+    return 1
 }
 
 function zenbook-set-kb-backlight() {
@@ -208,7 +215,8 @@ function zenbook-bt-disconnect-once() {
         return 0
     fi
     echo "$(date) - KEYBOARD - BT disconnect once (${mac}) — clearing Connected-without-HID"
-    out=$(bluetoothctl --timeout 8 disconnect "${mac}" 2>&1) || true
+    # Outer timeout so a wedged bluetoothctl cannot stall undock forever.
+    out=$(timeout 10 bluetoothctl --timeout 8 disconnect "${mac}" 2>&1) || true
     echo "$(date) - KEYBOARD - BT disconnect: $(tr '\n' ' ' <<<"${out}" | cut -c1-120)"
     sleep 1.5
 }
@@ -220,7 +228,7 @@ function zenbook-bt-connect-once() {
     command -v bluetoothctl >/dev/null 2>&1 || return 1
 
     echo "$(date) - KEYBOARD - BT connect once (${mac})"
-    out=$(bluetoothctl --timeout 20 connect "${mac}" 2>&1) || true
+    out=$(timeout 22 bluetoothctl --timeout 20 connect "${mac}" 2>&1) || true
     if grep -qiE 'Connection successful|Already connected' <<<"${out}"; then
         echo "$(date) - KEYBOARD - BT connect ok"
         return 0
@@ -241,12 +249,18 @@ function zenbook-bt-release-while-docked() {
 
 function zenbook-finish-detach-hid() {
     local level="${1}"
+    local attempt
+
     zenbook-heal-keyboard-inputs || true
-    if zenbook-set-kb-backlight "${level}" "bt"; then
-        echo "$(date) - KEYBOARD - detach backlight=${level}"
-    else
-        echo "$(date) - KEYBOARD - BT HID ready; backlight not applied (hidraw ACL?)"
-    fi
+    # hidraw ACL / iface settle briefly after HOGP; retry FEATURE only (no GATT).
+    for attempt in 1 2 3 4 5 6 7 8; do
+        if zenbook-set-kb-backlight "${level}" "bt"; then
+            echo "$(date) - KEYBOARD - detach backlight=${level} (attempt ${attempt})"
+            return 0
+        fi
+        sleep 0.35
+    done
+    echo "$(date) - KEYBOARD - BT HID ready; backlight FEATURE not applied" >&2
 }
 
 function zenbook-wait-bt-hid() {
