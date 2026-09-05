@@ -300,7 +300,19 @@ function zenbook-softkbd() {
             return 0
         fi
     done
+
+    local preferred="${candidates[0]:-onboard}"
+    local install_hint
+    case "${ZENBOOK_PKG_MANAGER:-}" in
+        apt) install_hint="sudo apt install ${preferred}" ;;
+        dnf) install_hint="sudo dnf install ${preferred}" ;;
+        pacman) install_hint="sudo pacman -S ${preferred}" ;;
+        *) install_hint="install package '${preferred}'" ;;
+    esac
+
     echo "$(date) - INPUT - ERROR: no soft keyboard for profile=${ZENBOOK_PROFILE:-unknown} (tried: ${candidates[*]})" >&2
-    notify-send -r "${ZENBOOK_NOTIFY_ID:-8406}" -t 1200 --hint=int:transient:1 -i "dialog-warning" "Soft keyboard missing" 2>/dev/null || true
+    echo "$(date) - INPUT - HINT: soft keyboard is optional; install one with: ${install_hint}" >&2
+    notify-send -r "${ZENBOOK_NOTIFY_ID:-8406}" -t 2500 --hint=int:transient:1 -i "dialog-warning" \
+        "Soft keyboard missing" "Install with: ${install_hint}" 2>/dev/null || true
     return 1
 }
