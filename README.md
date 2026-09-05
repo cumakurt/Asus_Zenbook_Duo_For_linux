@@ -343,14 +343,6 @@ export ZENBOOK_BACKEND_OVERRIDE=x11   # force backend (debug)
 
 ## Security model
 
-
-| Old / unsafe pattern                        | This project                            |
-| ------------------------------------------- | --------------------------------------- |
-| NOPASSWD sudo on `/tmp/.../backlight.py`    | Removed on install                      |
-| Root systemd unit driving GUI display tools | Avoided; XDG autostart as the user      |
-| Python + pyusb runtime dependency           | Native `kbd-backlight` + udev `uaccess` |
-
-
 The keyboard USB device is tagged for the active local seat so the backlight helper can open `/dev/bus/usb/...` without privilege escalation.
 
 ---
