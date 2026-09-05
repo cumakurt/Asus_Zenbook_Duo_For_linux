@@ -1,4 +1,4 @@
-# Zenbook Duo Linux Helper
+# Asus Zenbook Duo Linux Helper
 
 Session-aware integration for the **ASUS Zenbook Duo UX8406CA** dual-screen laptop on modern Linux desktops (X11 and Wayland).
 
@@ -24,11 +24,13 @@ This project closes the gap between ASUS dual-panel hardware behaviour and what 
 
 **Solution:** Explicit layout control:
 
-| State | Behaviour |
-|-------|-----------|
-| Keyboard attached | Top panel primary; bottom panel off |
-| Keyboard detached | Top + bottom stacked (`eDP-2` below `eDP-1`) |
-| Device rotated | Both panels rotated and repositioned together |
+
+| State             | Behaviour                                     |
+| ----------------- | --------------------------------------------- |
+| Keyboard attached | Top panel primary; bottom panel off           |
+| Keyboard detached | Top + bottom stacked (`eDP-2` below `eDP-1`)  |
+| Device rotated    | Both panels rotated and repositioned together |
+
 
 Default panel modes: `2880x1800@120` (top), `2880x1800@60` (bottom).
 
@@ -101,17 +103,21 @@ Overrides (debugging): `ZENBOOK_BACKEND_OVERRIDE`, `ZENBOOK_PROFILE_OVERRIDE`.
 
 **Solution:** CLI helpers that map to Linux tools:
 
-| ScreenXpert idea | Linux helper |
-|------------------|--------------|
-| Second screen on/off | `zenbook bottom on\|off\|toggle` |
-| Rotation lock | `zenbook rotate-lock on\|off\|toggle` |
-| Sharing: extend / clone / facing | `zenbook share extend\|duplicate\|facing\|reset` |
-| Virtual keyboard | `zenbook softkbd` (launches `onboard` / `squeekboard` / …) |
-| Status + BT keyboard battery | `zenbook status` |
+
+| ScreenXpert idea                 | Linux helper                                               |
+| -------------------------------- | ---------------------------------------------------------- |
+| Second screen on/off             | `zenbook bottom on\|off\|toggle`                           |
+| Rotation lock                    | `zenbook rotate-lock on\|off\|toggle`                      |
+| Sharing: extend / clone / facing | `zenbook share extend\|duplicate\|facing\|reset`           |
+| Virtual keyboard                 | `zenbook softkbd` (launches `onboard` / `squeekboard` / …) |
+| Status + BT keyboard battery     | `zenbook status`                                           |
+
 
 Full ScreenXpert UI, multi-finger gestures, App Switcher, and MyASUS are **not** reimplemented (Windows-only vendor stack).
 
 ---
+
+
 
 ## Hardware coverage (UX8406CA)
 
@@ -119,56 +125,68 @@ This helper targets **Duo dual-OLED + detachable keyboard** behaviour. It is **n
 
 ### Covered (Linux userspace)
 
-| Feature | Status |
-|---------|--------|
-| USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes |
-| Bottom OLED enable/disable with dock | Yes |
-| Stacked dual-panel layout (`eDP-1` / `eDP-2`) | Yes |
-| Native modes (default 2880×1800 @120 / @60) | Yes |
-| Keyboard backlight 0–3 (USB HID) | Yes |
-| Dual-panel brightness sync | Yes |
-| Accelerometer rotation layouts | Yes |
-| Rotation lock | Yes |
-| Sharing: extend / duplicate (X11 mirror) / facing | Yes (duplicate best on X11) |
-| Soft / on-screen keyboard launch | Yes (needs `onboard` or similar installed) |
-| Dual OLED touch/stylus map-to-output (X11) | Yes (`ELAN9008`/`ELAN9009`) |
-| BT keyboard battery in `status` | Best-effort via BlueZ |
-| Wi-Fi / Bluetooth preference restore | Yes |
-| Multi-DE backends (X11/GNOME/KDE/wlroots/Hyprland/COSMIC) | Yes |
+
+| Feature                                                     | Status                                     |
+| ----------------------------------------------------------- | ------------------------------------------ |
+| USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes                                        |
+| Bottom OLED enable/disable with dock                        | Yes                                        |
+| Stacked dual-panel layout (`eDP-1` / `eDP-2`)               | Yes                                        |
+| Native modes (default 2880×1800 @120 / @60)                 | Yes                                        |
+| Keyboard backlight 0–3 (USB HID)                            | Yes                                        |
+| Dual-panel brightness sync                                  | Yes                                        |
+| Accelerometer rotation layouts                              | Yes                                        |
+| Rotation lock                                               | Yes                                        |
+| Sharing: extend / duplicate (X11 mirror) / facing           | Yes (duplicate best on X11)                |
+| Soft / on-screen keyboard launch                            | Yes (needs `onboard` or similar installed) |
+| Dual OLED touch/stylus map-to-output (X11)                  | Yes (`ELAN9008`/`ELAN9009`)                |
+| BT keyboard battery in `status`                             | Best-effort via BlueZ                      |
+| Wi-Fi / Bluetooth preference restore                        | Yes                                        |
+| Multi-DE backends (X11/GNOME/KDE/wlroots/Hyprland/COSMIC)   | Yes                                        |
+
+
+
 
 ### Not covered (out of scope or Windows-only)
 
-| Feature | Notes |
-|---------|-------|
-| ScreenXpert overlay UI / widgets | Vendor Windows app |
-| Multi-finger ScreenXpert gestures | Needs compositor gesture stack |
-| Task swap / window flick between panels | Partial X11 rescue only; no gesture UI |
-| Soft trackpad / handwriting pad | Use DE / onboard extras |
-| Kickstand | Mechanical |
-| Thunderbolt / Wi-Fi 7 / fans / battery charge limit | Kernel / firmware / other tools |
-| OLED HDR / colour profiles | Desktop colour management |
-| Fingerprint / camera / audio | Distro drivers; not this helper |
-| Wayland dual-touch binding | Compositor-dependent; X11 mapping only |
-| GlideX / MyASUS updates | Windows / vendor cloud |
+
+| Feature                                             | Notes                                  |
+| --------------------------------------------------- | -------------------------------------- |
+| ScreenXpert overlay UI / widgets                    | Vendor Windows app                     |
+| Multi-finger ScreenXpert gestures                   | Needs compositor gesture stack         |
+| Task swap / window flick between panels             | Partial X11 rescue only; no gesture UI |
+| Soft trackpad / handwriting pad                     | Use DE / onboard extras                |
+| Kickstand                                           | Mechanical                             |
+| Thunderbolt / Wi-Fi 7 / fans / battery charge limit | Kernel / firmware / other tools        |
+| OLED HDR / colour profiles                          | Desktop colour management              |
+| Fingerprint / camera / audio                        | Distro drivers; not this helper        |
+| Wayland dual-touch binding                          | Compositor-dependent; X11 mapping only |
+| GlideX / MyASUS updates                             | Windows / vendor cloud                 |
+
 
 Kernel `hid-asus` quirks for Duo keyboard IDs complement this project; they are not installed by this repo.
 
 ---
 
+
+
 ## Supported display backends
 
-| Backend | Tool | Typical environments |
-|---------|------|----------------------|
-| `x11` | `xrandr` | MATE, XFCE, Cinnamon, LXQt, GNOME/KDE on X11, classic WMs |
-| `gnome` | `gdctl` | GNOME / Budgie / Pantheon Wayland |
-| `kde` | `kscreen-doctor` | Plasma Wayland |
-| `wlr` | `wlr-randr` | Sway, Wayfire, labwc, river, niri, other wlroots |
-| `hyprland` | `hyprctl` | Hyprland |
-| `cosmic` | `cosmic-randr` | System76 COSMIC |
+
+| Backend    | Tool             | Typical environments                                      |
+| ---------- | ---------------- | --------------------------------------------------------- |
+| `x11`      | `xrandr`         | MATE, XFCE, Cinnamon, LXQt, GNOME/KDE on X11, classic WMs |
+| `gnome`    | `gdctl`          | GNOME / Budgie / Pantheon Wayland                         |
+| `kde`      | `kscreen-doctor` | Plasma Wayland                                            |
+| `wlr`      | `wlr-randr`      | Sway, Wayfire, labwc, river, niri, other wlroots          |
+| `hyprland` | `hyprctl`        | Hyprland                                                  |
+| `cosmic`   | `cosmic-randr`   | System76 COSMIC                                           |
+
 
 If the preferred tool is missing, the installer/runtime probes other backends in a safe order.
 
 ---
+
+
 
 ## Architecture
 
@@ -199,6 +217,8 @@ Runtime state lives under `$XDG_RUNTIME_DIR/zenbook/` (fallback `/tmp/zenbook/`)
 
 ---
 
+
+
 ## Requirements
 
 - ASUS Zenbook Duo UX8406CA (or compatible dual `eDP-1` / `eDP-2` Duo)
@@ -208,6 +228,8 @@ Runtime state lives under `$XDG_RUNTIME_DIR/zenbook/` (fallback `/tmp/zenbook/`)
 
 ---
 
+
+
 ## Install
 
 Run as your **normal desktop user** (not root). The script elevates only where needed.
@@ -216,6 +238,8 @@ Run as your **normal desktop user** (not root). The script elevates only where n
 chmod +x install.sh zenbook.sh uninstall.sh
 ./install.sh
 ```
+
+
 
 ### Uninstall
 
@@ -227,13 +251,17 @@ Removes only this application's installed artifacts (binary tree, autostart, ude
 ./uninstall.sh --dry-run
 ```
 
+
+
 ### Useful options
 
-| Option | Meaning |
-|--------|---------|
-| `--dry-run` | Print detected OS/DE/backend and package plan; change nothing |
-| `--backlight N` | Default keyboard backlight `0–3` (default: `3`) |
-| `--help` | Show help |
+
+| Option          | Meaning                                                       |
+| --------------- | ------------------------------------------------------------- |
+| `--dry-run`     | Print detected OS/DE/backend and package plan; change nothing |
+| `--backlight N` | Default keyboard backlight `0–3` (default: `3`)               |
+| `--help`        | Show help                                                     |
+
 
 Examples:
 
@@ -242,20 +270,26 @@ Examples:
 ./install.sh --backlight 2
 ```
 
+
+
 ### What install does
 
-1. Detects OS, desktop, session, compositor, and display backend  
-2. Installs matching packages  
-3. Installs modules to `/usr/local/lib/zenbook/` and links `/usr/local/bin/zenbook`  
-4. Compiles `lib/kbd-backlight.c` → `kbd-backlight`  
-5. Writes XDG autostart for the detected desktop  
-6. Installs udev `uaccess` for the Duo keyboard  
-7. Removes obsolete systemd/sudoers hooks from earlier helper installs  
-8. Starts the helper in the current graphical session when possible  
+1. Detects OS, desktop, session, compositor, and display backend
+2. Installs matching packages
+3. Installs modules to `/usr/local/lib/zenbook/` and links `/usr/local/bin/zenbook`
+4. Compiles `lib/kbd-backlight.c` → `kbd-backlight`
+5. Writes XDG autostart for the detected desktop
+6. Installs udev `uaccess` for the Duo keyboard
+7. Removes obsolete systemd/sudoers hooks from earlier helper installs
+8. Starts the helper in the current graphical session when possible
 
 ---
 
+
+
 ## Usage
+
+
 
 ### Automatic
 
@@ -264,7 +298,7 @@ After install, the helper starts with your desktop session and:
 - reacts to keyboard attach/detach  
 - syncs bottom-panel brightness  
 - applies rotation from the accelerometer  
-- keeps Wi-Fi/Bluetooth policy consistent  
+- keeps Wi-Fi/Bluetooth policy consistent
 
 Logs: `/tmp/zenbook/zenbook.log` (and session start log when launched by the installer).
 
@@ -303,35 +337,46 @@ export ZENBOOK_BACKEND_OVERRIDE=x11   # force backend (debug)
 
 ---
 
+
+
 ## Security model
 
-| Old / unsafe pattern | This project |
-|----------------------|--------------|
-| NOPASSWD sudo on `/tmp/.../backlight.py` | Removed on install |
-| Root systemd unit driving GUI display tools | Avoided; XDG autostart as the user |
-| Python + pyusb runtime dependency | Native `kbd-backlight` + udev `uaccess` |
+
+| Old / unsafe pattern                        | This project                            |
+| ------------------------------------------- | --------------------------------------- |
+| NOPASSWD sudo on `/tmp/.../backlight.py`    | Removed on install                      |
+| Root systemd unit driving GUI display tools | Avoided; XDG autostart as the user      |
+| Python + pyusb runtime dependency           | Native `kbd-backlight` + udev `uaccess` |
+
 
 The keyboard USB device is tagged for the active local seat so the backlight helper can open `/dev/bus/usb/...` without privilege escalation.
 
 ---
 
+
+
 ## Project layout (quick map)
 
-| Path | Role |
-|------|------|
-| [`install.sh`](install.sh) | Automatic detector + installer |
-| [`zenbook.sh`](zenbook.sh) | Runtime entry point |
-| [`lib/detect/`](lib/detect/) | OS / desktop detection |
-| [`lib/backend/`](lib/backend/) | Display backends |
-| [`lib/kbd-backlight.c`](lib/kbd-backlight.c) | Keyboard backlight (C) |
-| [`lib/monitor.sh`](lib/monitor.sh) | Keyboard ↔ panel orchestration |
-| [`lib/brightness.sh`](lib/brightness.sh) | Dual-panel brightness sync |
+
+| Path                                         | Role                           |
+| -------------------------------------------- | ------------------------------ |
+| [`install.sh`](install.sh)                   | Automatic detector + installer |
+| [`zenbook.sh`](zenbook.sh)                   | Runtime entry point            |
+| [`lib/detect/`](lib/detect/)                 | OS / desktop detection         |
+| [`lib/backend/`](lib/backend/)               | Display backends               |
+| [`lib/kbd-backlight.c`](lib/kbd-backlight.c) | Keyboard backlight (C)         |
+| [`lib/monitor.sh`](lib/monitor.sh)           | Keyboard ↔ panel orchestration |
+| [`lib/brightness.sh`](lib/brightness.sh)     | Dual-panel brightness sync     |
+
 
 ---
+
+
 
 ## Troubleshooting
 
 **Bottom panel never enables/disables**  
+
 - Confirm `eDP-1` / `eDP-2` exist (`xrandr -q`, `gdctl show`, `kscreen-doctor -o`, …).  
 - Check `zenbook status`: both panels should report `(connected, on|off)`.  
 - Dock is **USB only** — Bluetooth connected does not turn `eDP-2` off.  
@@ -341,31 +386,39 @@ The keyboard USB device is tagged for the active local seat so the backlight hel
 - Ensure you are in a graphical session matching the detected backend.
 
 **Keyboard backlight does nothing**  
+
 - Replug the keyboard after install so udev `uaccess` applies.  
 - Confirm `lsusb` shows `ASUS Zenbook Duo Keyboard` (VID:PID `0b05:1bf2`).  
 - Ensure `/usr/local/lib/zenbook/lib/kbd-backlight` is executable.
 
 **Brightness sync only on one panel**  
+
 - Check `/sys/class/backlight/` for `intel_backlight` and a bottom device (`*-eDP-2-backlight` or `asus_screenpad`).  
 - Install `brightnessctl` if write access to sysfs is restricted.
 
 **Wrong desktop backend**  
+
 ```bash
 ZENBOOK_BACKEND_OVERRIDE=x11 /usr/local/bin/zenbook
 ```
+
 Use only for debugging; prefer fixing session type / installed tools.
 
 ---
 
+
+
 ## Credits
 
 - **Author:** Cuma KURT  
-  - LinkedIn: https://www.linkedin.com/in/cuma-kurt-34414917/  
-  - GitHub: https://github.com/cumakurt/Asus_Zenbook_Duo_For_linux
+  - LinkedIn: [https://www.linkedin.com/in/cuma-kurt-34414917/](https://www.linkedin.com/in/cuma-kurt-34414917/)  
+  - GitHub: [https://github.com/cumakurt/Asus_Zenbook_Duo_For_linux](https://github.com/cumakurt/Asus_Zenbook_Duo_For_linux)
 - Keyboard HID backlight protocol based on work by **Alesya Huzik** (BSD-2-Clause).  
 - Dual-panel UX adapted for multi-desktop Linux (MATE/X11 origins extended to GNOME, KDE, wlroots, Hyprland, COSMIC).
 
 ---
+
+
 
 ## License
 
