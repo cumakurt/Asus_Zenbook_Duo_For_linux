@@ -1,0 +1,8 @@
+#!/bin/bash
+# Generic X11 session fallback.
+ZENBOOK_PROFILE_LABEL="Generic / X11"
+ZENBOOK_PROFILE_SOFTKBD=(onboard florence maliit-keyboard squeekboard)
+ZENBOOK_PROFILE_TOUCH=x11
+ZENBOOK_PROFILE_MIRROR=x11
+ZENBOOK_PROFILE_WINDOWS=wmctrl
+ZENBOOK_PROFILE_DISPLAY_TOOL=xrandr
