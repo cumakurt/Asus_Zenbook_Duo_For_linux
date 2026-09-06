@@ -15,12 +15,15 @@ zenbook-cleanup() {
     local pid
     zenbook-cancel-detach-backlight 2>/dev/null || true
     for pid in "${ZENBOOK_PIDS[@]:-}"; do
-        kill "${pid}" 2>/dev/null || true
+        if [[ -n "${pid}" ]]; then
+            pkill -P "${pid}" >/dev/null 2>&1 || true
+            kill "${pid}" 2>/dev/null || true
+        fi
     done
     pkill -P $$ >/dev/null 2>&1 || true
 }
 
-trap 'echo "Exiting..."; zenbook-cleanup; exit 1' INT TERM
+trap 'echo "Exiting..."; trap - EXIT; zenbook-cleanup; exit 1' INT TERM
 trap 'zenbook-cleanup' EXIT
 
 # shellcheck source=/dev/null
@@ -130,7 +133,11 @@ function main() {
     MONITOR_COUNT=$(zenbook-monitor-count)
     zenbook-set-status
 
-    zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "auto" || true
+    if zenbook-keyboard-attached; then
+        zenbook-apply-docked-backlight "${DEFAULT_BACKLIGHT}" || true
+    else
+        zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "bt" || true
+    fi
     # Force apply on startup so a docked keyboard disables eDP-2 immediately.
     zenbook-check-monitor 1
     zenbook-map-touch-inputs || true

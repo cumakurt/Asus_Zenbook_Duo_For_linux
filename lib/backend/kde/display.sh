@@ -90,14 +90,27 @@ function zenbook-output-geometry() {
     '
 }
 
+function zenbook-output-rotation() {
+    local output="${1}"
+    kscreen-doctor -j 2>/dev/null | jq -r --arg o "${output}" '
+        .outputs[]? | select(.name == $o and .enabled) |
+        (.rotation // empty)
+    '
+}
+
 function zenbook-disable-bottom-monitor() {
     local lock_fd rc
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     zenbook-save-bottom-windows
     kscreen-doctor \
         "output.${TOP_OUTPUT}.enable" \
+        "output.${TOP_OUTPUT}.mode.${TOP_MODE}@${TOP_RATE}" \
+        "output.${TOP_OUTPUT}.rotation.normal" \
         "output.${TOP_OUTPUT}.primary" \
         "output.${TOP_OUTPUT}.position.0,0" \
         "output.${BOTTOM_OUTPUT}.disable"
@@ -116,7 +129,10 @@ function zenbook-disable-bottom-monitor() {
 
 function zenbook-enable-bottom-monitor() {
     local lock_fd rc top_h
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     top_h=${TOP_MODE#*x}
@@ -142,26 +158,82 @@ function zenbook-enable-bottom-monitor() {
     return ${rc}
 }
 
+function zenbook-mirror-displays() {
+    local lock_fd rc
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    kscreen-doctor \
+        "output.${TOP_OUTPUT}.enable" \
+        "output.${TOP_OUTPUT}.mode.${TOP_MODE}@${TOP_RATE}" \
+        "output.${TOP_OUTPUT}.rotation.normal" \
+        "output.${TOP_OUTPUT}.primary" \
+        "output.${TOP_OUTPUT}.position.0,0" \
+        "output.${BOTTOM_OUTPUT}.enable" \
+        "output.${BOTTOM_OUTPUT}.mode.${BOTTOM_MODE}@${BOTTOM_RATE}" \
+        "output.${BOTTOM_OUTPUT}.rotation.normal" \
+        "output.${BOTTOM_OUTPUT}.cloneOf.${TOP_OUTPUT}" || \
+    kscreen-doctor \
+        "output.${TOP_OUTPUT}.enable" \
+        "output.${TOP_OUTPUT}.mode.${TOP_MODE}@${TOP_RATE}" \
+        "output.${TOP_OUTPUT}.rotation.normal" \
+        "output.${TOP_OUTPUT}.primary" \
+        "output.${TOP_OUTPUT}.position.0,0" \
+        "output.${BOTTOM_OUTPUT}.enable" \
+        "output.${BOTTOM_OUTPUT}.mode.${BOTTOM_MODE}@${BOTTOM_RATE}" \
+        "output.${BOTTOM_OUTPUT}.rotation.normal" \
+        "output.${BOTTOM_OUTPUT}.position.0,0"
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
+function zenbook-facing-displays() {
+    local lock_fd rc top_h
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    top_h=${TOP_MODE#*x}
+    kscreen-doctor \
+        "output.${TOP_OUTPUT}.enable" \
+        "output.${TOP_OUTPUT}.mode.${TOP_MODE}@${TOP_RATE}" \
+        "output.${TOP_OUTPUT}.rotation.normal" \
+        "output.${TOP_OUTPUT}.primary" \
+        "output.${TOP_OUTPUT}.position.0,0" \
+        "output.${BOTTOM_OUTPUT}.enable" \
+        "output.${BOTTOM_OUTPUT}.mode.${BOTTOM_MODE}@${BOTTOM_RATE}" \
+        "output.${BOTTOM_OUTPUT}.rotation.inverted" \
+        "output.${BOTTOM_OUTPUT}.position.0,${top_h}"
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
 function zenbook-rotate-displays() {
     local orientation="${1}"
     local lock_fd rc=0
-    local rotation pos_x=0 pos_y=0
-    local top_w top_h bottom_w
+    local rotation
+    local top_h bottom_h
 
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     rotation=$(zenbook-kde-rotation "${orientation}")
-    top_w=${TOP_MODE%x*}
     top_h=${TOP_MODE#*x}
-    bottom_w=${BOTTOM_MODE%x*}
-
-    case "${orientation}" in
-        left-up) pos_x=0; pos_y=0 ;;
-        right-up) pos_x=${top_w}; pos_y=0 ;;
-        bottom-up) pos_x=0; pos_y=0 ;;
-        *) pos_x=0; pos_y=${top_h} ;;
-    esac
+    bottom_h=${BOTTOM_MODE#*x}
 
     if [ "${KEYBOARD_ATTACHED}" = true ]; then
         kscreen-doctor \
@@ -179,7 +251,7 @@ function zenbook-rotate-displays() {
                     "output.${TOP_OUTPUT}.mode.${TOP_MODE}@${TOP_RATE}" \
                     "output.${TOP_OUTPUT}.rotation.${rotation}" \
                     "output.${TOP_OUTPUT}.primary" \
-                    "output.${TOP_OUTPUT}.position.${bottom_w},0" \
+                    "output.${TOP_OUTPUT}.position.${bottom_h},0" \
                     "output.${BOTTOM_OUTPUT}.enable" \
                     "output.${BOTTOM_OUTPUT}.mode.${BOTTOM_MODE}@${BOTTOM_RATE}" \
                     "output.${BOTTOM_OUTPUT}.rotation.${rotation}" \
@@ -195,7 +267,7 @@ function zenbook-rotate-displays() {
                     "output.${BOTTOM_OUTPUT}.enable" \
                     "output.${BOTTOM_OUTPUT}.mode.${BOTTOM_MODE}@${BOTTOM_RATE}" \
                     "output.${BOTTOM_OUTPUT}.rotation.${rotation}" \
-                    "output.${BOTTOM_OUTPUT}.position.${top_w},0" || rc=$?
+                    "output.${BOTTOM_OUTPUT}.position.${top_h},0" || rc=$?
                 ;;
             bottom-up)
                 kscreen-doctor \

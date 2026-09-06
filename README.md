@@ -50,13 +50,13 @@ Default panel modes: `2880x1800@120` (top and bottom; UX8406CA native).
 
 **Problem:** The two OLEDs often expose separate backlight devices. Changing brightness in the desktop UI typically updates only the top panel (`intel_backlight`), leaving the ScreenPad/bottom panel dim or stuck.
 
-**Solution:** The helper watches top-panel brightness changes (`inotify`) and mirrors the level to the bottom backlight (`card*-eDP-2-backlight` or `asus_screenpad`), scaled by each device’s `max_brightness`.
+**Solution:** The helper monitors top-panel brightness events using `udevadm monitor` (with a lightweight polling fallback for reliability, avoiding sysfs inotify limitations) and mirrors the level to the bottom backlight (`card*-eDP-2-backlight` or `asus_screenpad`), scaled by each device’s `max_brightness`.
 
 ### 5. Detachable keyboard backlight has no first-class Linux control
 
 **Problem:** The Duo keyboard backlight is driven by a vendor USB HID `SET_REPORT` command. There is no portable desktop setting for levels `0–3`, and older approaches ran a user-writable Python script via passwordless `sudo` (unsafe).
 
-**Solution:** A small native C helper (`kbd-backlight`) sends the same HID report through `hidraw` first (safer for typing), falling back to USB `usbdevfs` when docked. Access uses a `udev` `uaccess` rule matching USB and Bluetooth uhid parents (`KERNELS=="0005:VID:PID.*"`). On undock the helper only unblocks Bluetooth (`rfkill`) and leaves HOGP to BlueZ — it does **not** call `bluetoothctl` connect/disconnect or GATT (those break HID: Connected without keys). When BT hidraw appears it may set `DETACH_BACKLIGHT` (default `3`) and re-enable Duo xinput nodes.
+**Solution:** A small native C helper (`kbd-backlight`) sends the same HID report through `hidraw` first (safer for typing), falling back to USB `usbdevfs` when docked. Access uses a `udev` `uaccess` rule matching USB and Bluetooth uhid parents (`KERNELS=="0005:VID:PID.*"`). When docked, an attach retry loop ensures the backlight level is applied reliably as device nodes initialize. On undock the helper only unblocks Bluetooth (`rfkill`) and leaves HOGP to BlueZ — it does **not** call `bluetoothctl` connect/disconnect or GATT (those break HID: Connected without keys). When BT hidraw appears it may set `DETACH_BACKLIGHT` (default `3`) and re-enable Duo xinput nodes.
 
 ### 6. Wi-Fi / Bluetooth state fights the keyboard dock workflow
 
@@ -68,7 +68,7 @@ Default panel modes: `2880x1800@120` (top and bottom; UX8406CA native).
 
 **Problem:** Accelerometer orientation changes (laptop / tablet / tent) are not wired to dual-panel RandR/compositor layouts on most Linux setups.
 
-**Solution:** `monitor-sensor` orientation events are mapped to layout commands (`normal`, `left-up`, `right-up`, `bottom-up`) and applied through the active display backend.
+**Solution:** `monitor-sensor` orientation events are mapped to layout commands (`normal`, `left-up`, `right-up`, `bottom-up`) and applied through the active display backend with flock concurrency locking. Orientation changes are automatically debounced to filter out mechanical jolts when snapping or removing the magnetic keyboard, and ignored while the keyboard is docked.
 
 ### 8. “Works on one desktop only” install scripts
 
@@ -126,22 +126,22 @@ This helper targets **Duo dual-OLED + detachable keyboard** behaviour. It is **n
 ### Covered (Linux userspace)
 
 
-| Feature                                                     | Status                                     |
-| ----------------------------------------------------------- | ------------------------------------------ |
-| USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes                                        |
-| Bottom OLED enable/disable with dock                        | Yes                                        |
-| Stacked dual-panel layout (`eDP-1` / `eDP-2`)               | Yes                                        |
-| Native modes (default 2880×1800 @120 / @120) | Yes |
-| Keyboard backlight 0–3 (USB HID)                            | Yes                                        |
-| Dual-panel brightness sync                                  | Yes                                        |
-| Accelerometer rotation layouts                              | Yes                                        |
-| Rotation lock                                               | Yes                                        |
-| Sharing: extend / duplicate (X11 mirror) / facing           | Yes (duplicate best on X11)                |
-| Soft / on-screen keyboard launch                            | Yes (needs `onboard` or similar installed) |
-| Dual OLED touch/stylus map-to-output (X11)                  | Yes (`ELAN9008`/`ELAN9009`)                |
-| BT keyboard battery in `status`                             | Best-effort via BlueZ                      |
-| Wi-Fi / Bluetooth preference restore                        | Yes                                        |
-| Multi-DE backends (X11/GNOME/KDE/wlroots/Hyprland/COSMIC)   | Yes                                        |
+| Feature                                                     | Status                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------- |
+| USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes                                                        |
+| Bottom OLED enable/disable with dock                        | Yes                                                        |
+| Stacked dual-panel layout (`eDP-1` / `eDP-2`)               | Yes                                                        |
+| Native modes (default 2880×1800 @120 / @120)                | Yes                                                        |
+| Keyboard backlight 0–3 (USB HID)                            | Yes (with dock attach retry)                               |
+| Dual-panel brightness sync                                  | Yes (via udevadm event stream, polling fallback)           |
+| Accelerometer rotation layouts                              | Yes (debounced, flock-synchronized)                        |
+| Rotation lock                                               | Yes                                                        |
+| Sharing: extend / duplicate (mirror) / facing               | Yes (all backends: X11, GNOME, KDE, WLR, Hyprland, COSMIC) |
+| Soft / on-screen keyboard launch                            | Yes (supports `squeekboard`, `maliit`, `onboard`, `kvkbd`) |
+| Dual OLED touch/stylus map-to-output (X11)                  | Yes (`ELAN9008`/`ELAN9009`)                                |
+| BT keyboard battery in `status`                             | Best-effort via BlueZ                                      |
+| Wi-Fi / Bluetooth preference restore                        | Yes                                                        |
+| Multi-DE backends (X11/GNOME/KDE/wlroots/Hyprland/COSMIC)   | Yes                                                        |
 
 
 
@@ -172,15 +172,17 @@ Kernel `hid-asus` quirks for Duo keyboard IDs complement this project; they are 
 ## Supported display backends
 
 
-| Backend    | Tool             | Typical environments                                      |
-| ---------- | ---------------- | --------------------------------------------------------- |
-| `x11`      | `xrandr`         | MATE, XFCE, Cinnamon, LXQt, GNOME/KDE on X11, classic WMs |
-| `gnome`    | `gdctl`          | GNOME / Budgie / Pantheon Wayland                         |
-| `kde`      | `kscreen-doctor` | Plasma Wayland                                            |
-| `wlr`      | `wlr-randr`      | Sway, Wayfire, labwc, river, niri, other wlroots          |
-| `hyprland` | `hyprctl`        | Hyprland                                                  |
-| `cosmic`   | `cosmic-randr`   | System76 COSMIC                                           |
+| Backend    | Tool             | Typical environments                                      | Mirror & Facing |
+| ---------- | ---------------- | --------------------------------------------------------- | --------------- |
+| `x11`      | `xrandr`         | MATE, XFCE, Cinnamon, LXQt, GNOME/KDE on X11, classic WMs | Yes             |
+| `gnome`    | `gdctl`          | GNOME / Budgie / Pantheon Wayland                         | Yes             |
+| `kde`      | `kscreen-doctor` | Plasma Wayland                                            | Yes             |
+| `wlr`      | `wlr-randr`      | Sway, Wayfire, labwc, river, niri, other wlroots          | Yes             |
+| `hyprland` | `hyprctl`        | Hyprland                                                  | Yes             |
+| `cosmic`   | `cosmic-randr`   | System76 COSMIC                                           | Yes             |
 
+
+All display backends synchronize mode switches, rotation, dock changes, and sharing modes through file locks (`flock`) to prevent race conditions during rapid docking/undocking or sensor events.
 
 If the preferred tool is missing, the installer/runtime probes other backends in a safe order.
 
@@ -301,7 +303,7 @@ After install, the helper starts with your desktop session and:
 - applies rotation from the accelerometer  
 - keeps Wi-Fi/Bluetooth policy consistent
 
-Logs: `/tmp/zenbook/zenbook.log` (and session start log when launched by the installer).
+Logs: `$XDG_RUNTIME_DIR/zenbook/zenbook.log` (fallback: `/tmp/zenbook/zenbook.log`, plus session start log when launched by installer).
 
 ### CLI
 
@@ -313,16 +315,16 @@ zenbook detect                  # DE / session / profile / capability matrix
 zenbook touch                   # remap dual OLED touch/stylus (X11)
 zenbook keyboard-heal           # re-enable Duo BT keyboard/touchpad nodes in X
 zenbook kbb 2                   # keyboard backlight 0–3 (USB or BT hidraw)
-zenbook softkbd                 # launch onboard/squeekboard if installed
+zenbook softkbd                 # launch onboard/squeekboard/maliit/kvkbd if installed
 zenbook bottom on|off|toggle    # force second screen
-zenbook share extend|duplicate|facing|reset
+zenbook share extend|duplicate|facing|reset # extend: stacked; duplicate: mirror; facing: presentation
 zenbook rotate-lock on|off|toggle
 zenbook normal|left-up|right-up|bottom-up
 zenbook pre                     # ACPI-style: backlight off
 zenbook post                    # ACPI-style: restore + re-check monitors
 ```
 
-Optional soft keyboard package (not pulled by default): `onboard` (X11) or `squeekboard` (Wayland).
+Optional soft keyboard package (not pulled by default): `onboard` (X11), or `squeekboard` / `maliit-keyboard` / `kvkbd` (Wayland).
 
 Environment overrides (optional):
 
@@ -404,6 +406,7 @@ The keyboard USB device is tagged for the active local seat so the backlight hel
 **Brightness sync only on one panel**  
 
 - Check `/sys/class/backlight/` for `intel_backlight` and a bottom device (`*-eDP-2-backlight` or `asus_screenpad`).  
+- The helper streams backlight uevents via `udevadm monitor` (with automatic polling fallback if `udevadm` is absent).
 - Install `brightnessctl` if write access to sysfs is restricted.
 
 **Wrong desktop backend**  

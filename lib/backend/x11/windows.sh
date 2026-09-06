@@ -20,10 +20,10 @@ function zenbook-save-bottom-windows() {
 
     bw=${BASH_REMATCH[1]}
     bh=${BASH_REMATCH[2]}
-    bx=$(( ${BASH_REMATCH[3]} ))
-    by=$(( ${BASH_REMATCH[4]} ))
+    bx=$(( BASH_REMATCH[3] ))
+    by=$(( BASH_REMATCH[4] ))
 
-    while read -r wid desktop wx wy ww wh host title; do
+    while read -r wid desktop wx wy ww wh _; do
         [[ "${desktop}" == "-1" ]] && continue
         [[ "${wx}" =~ ^-?[0-9]+$ ]] || continue
         [[ "${wy}" =~ ^-?[0-9]+$ ]] || continue
@@ -67,8 +67,8 @@ function zenbook-move-saved-windows-to-top() {
 
     tw=${BASH_REMATCH[1]}
     th=${BASH_REMATCH[2]}
-    tx=$(( ${BASH_REMATCH[3]} ))
-    ty=$(( ${BASH_REMATCH[4]} ))
+    tx=$(( BASH_REMATCH[3] ))
+    ty=$(( BASH_REMATCH[4] ))
 
     while read -r wid relx rely ww wh maxv maxh fullscreen; do
         local maxx maxy nx ny

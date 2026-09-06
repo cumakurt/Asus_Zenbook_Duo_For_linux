@@ -88,13 +88,23 @@ function zenbook-output-geometry() {
     '
 }
 
+function zenbook-output-rotation() {
+    local output="${1}"
+    hyprctl monitors -j 2>/dev/null | jq -r --arg o "${output}" '
+        .[]? | select(.name == $o) | (.transform // empty)
+    '
+}
+
 function zenbook-disable-bottom-monitor() {
     local lock_fd rc=0
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     zenbook-save-bottom-windows
-    hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1" >/dev/null || rc=$?
+    hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1,transform,0" >/dev/null || rc=$?
     hyprctl keyword monitor "${BOTTOM_OUTPUT},disable" >/dev/null || rc=$?
 
     if (( rc == 0 )); then
@@ -110,7 +120,10 @@ function zenbook-disable-bottom-monitor() {
 
 function zenbook-enable-bottom-monitor() {
     local lock_fd rc=0 top_h
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     top_h=${TOP_MODE#*x}
@@ -127,19 +140,54 @@ function zenbook-enable-bottom-monitor() {
     return ${rc}
 }
 
+function zenbook-mirror-displays() {
+    local lock_fd rc=0
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1" >/dev/null || rc=$?
+    hyprctl keyword monitor "${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},0x0,1,mirror,${TOP_OUTPUT}" >/dev/null || rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
+function zenbook-facing-displays() {
+    local lock_fd rc=0 top_h
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    top_h=${TOP_MODE#*x}
+    hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1,transform,0" >/dev/null || rc=$?
+    hyprctl keyword monitor "${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},0x${top_h},1,transform,2" >/dev/null || rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
 function zenbook-rotate-displays() {
     local orientation="${1}"
     local lock_fd rc=0
-    local transform top_w top_h bottom_w
+    local transform top_h bottom_h
     local top_spec bottom_spec
 
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     transform=$(zenbook-hypr-transform "${orientation}")
-    top_w=${TOP_MODE%x*}
     top_h=${TOP_MODE#*x}
-    bottom_w=${BOTTOM_MODE%x*}
+    bottom_h=${BOTTOM_MODE#*x}
 
     if [ "${KEYBOARD_ATTACHED}" = true ]; then
         hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1,transform,${transform}" >/dev/null || rc=$?
@@ -147,12 +195,12 @@ function zenbook-rotate-displays() {
     else
         case "${orientation}" in
             left-up)
-                top_spec="${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},${bottom_w}x0,1,transform,${transform}"
+                top_spec="${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},${bottom_h}x0,1,transform,${transform}"
                 bottom_spec="${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},0x0,1,transform,${transform}"
                 ;;
             right-up)
                 top_spec="${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1,transform,${transform}"
-                bottom_spec="${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},${top_w}x0,1,transform,${transform}"
+                bottom_spec="${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},${top_h}x0,1,transform,${transform}"
                 ;;
             bottom-up)
                 top_spec="${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x${top_h},1,transform,${transform}"

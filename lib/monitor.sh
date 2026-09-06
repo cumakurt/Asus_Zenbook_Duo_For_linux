@@ -60,7 +60,7 @@ function zenbook-check-monitor() {
         echo "$(date) - MONITOR - Keyboard attached"
         # Cancel any in-flight undock backlight retries before setting docked level.
         zenbook-cancel-detach-backlight
-        zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "usb" || true
+        zenbook-apply-docked-backlight "${DEFAULT_BACKLIGHT}" || true
         # USB is primary — drop any zombie BT link so the next undock can HOGP cleanly.
         zenbook-bt-release-while-docked || true
 
@@ -74,7 +74,7 @@ function zenbook-check-monitor() {
         if [ "${BLUETOOTH_BEFORE}" = unblocked ]; then
             echo "$(date) - MONITOR - Turning on Bluetooth"
             rfkill unblock bluetooth 2>/dev/null || echo "$(date) - MONITOR - WARNING: rfkill unblock failed" >&2
-        else
+        elif [ "${BLUETOOTH_BEFORE}" = blocked ]; then
             echo "$(date) - MONITOR - Turning off Bluetooth"
             rfkill block bluetooth 2>/dev/null || echo "$(date) - MONITOR - WARNING: rfkill block failed" >&2
         fi

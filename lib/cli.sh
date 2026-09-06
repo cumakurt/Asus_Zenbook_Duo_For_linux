@@ -29,7 +29,7 @@ function zenbook-cli() {
     post|thaw|boot)
         echo "$(date) - ACPI - $*"
         if zenbook-keyboard-attached; then
-            zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "usb" || true
+            zenbook-apply-docked-backlight "${DEFAULT_BACKLIGHT}" || true
         else
             zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "bt" || true
         fi

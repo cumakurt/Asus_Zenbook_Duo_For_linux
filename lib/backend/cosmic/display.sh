@@ -78,9 +78,23 @@ function zenbook-output-geometry() {
     '
 }
 
+function zenbook-output-rotation() {
+    local output="${1}"
+    local out
+    out=$(cosmic-randr list 2>/dev/null) || return 1
+    printf '%s\n' "${out}" | awk -v output="${output}" '
+        index($0, output) { cur=1; next }
+        cur && /Transform:/ { print $2; exit }
+        /^[^[:space:]]/ && cur && !index($0, output) { cur=0 }
+    '
+}
+
 function zenbook-disable-bottom-monitor() {
     local lock_fd rc=0 w h refresh
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     zenbook-save-bottom-windows
@@ -103,7 +117,10 @@ function zenbook-disable-bottom-monitor() {
 
 function zenbook-enable-bottom-monitor() {
     local lock_fd rc=0 tw th bw bh top_refresh bottom_refresh top_h
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     tw=${TOP_MODE%x*}
@@ -128,13 +145,65 @@ function zenbook-enable-bottom-monitor() {
     return ${rc}
 }
 
+function zenbook-mirror-displays() {
+    local lock_fd rc=0 tw th bw bh top_refresh bottom_refresh
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    tw=${TOP_MODE%x*}
+    th=${TOP_MODE#*x}
+    bw=${BOTTOM_MODE%x*}
+    bh=${BOTTOM_MODE#*x}
+    top_refresh=$(zenbook-cosmic-refresh-mHz "${TOP_RATE}")
+    bottom_refresh=$(zenbook-cosmic-refresh-mHz "${BOTTOM_RATE}")
+
+    cosmic-randr enable "${BOTTOM_OUTPUT}" >/dev/null 2>&1 || true
+    cosmic-randr mode "${TOP_OUTPUT}" "${tw}" "${th}" --refresh "${top_refresh}" --pos-x 0 --pos-y 0 --transform normal || rc=$?
+    cosmic-randr mode "${BOTTOM_OUTPUT}" "${bw}" "${bh}" --refresh "${bottom_refresh}" --pos-x 0 --pos-y 0 --transform normal || rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
+function zenbook-facing-displays() {
+    local lock_fd rc=0 tw th bw bh top_refresh bottom_refresh top_h
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    tw=${TOP_MODE%x*}
+    th=${TOP_MODE#*x}
+    bw=${BOTTOM_MODE%x*}
+    bh=${BOTTOM_MODE#*x}
+    top_h=${th}
+    top_refresh=$(zenbook-cosmic-refresh-mHz "${TOP_RATE}")
+    bottom_refresh=$(zenbook-cosmic-refresh-mHz "${BOTTOM_RATE}")
+
+    cosmic-randr enable "${BOTTOM_OUTPUT}" >/dev/null 2>&1 || true
+    cosmic-randr mode "${TOP_OUTPUT}" "${tw}" "${th}" --refresh "${top_refresh}" --pos-x 0 --pos-y 0 --transform normal || rc=$?
+    cosmic-randr mode "${BOTTOM_OUTPUT}" "${bw}" "${bh}" --refresh "${bottom_refresh}" --pos-x 0 --pos-y "${top_h}" --transform rotate180 || rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
 function zenbook-rotate-displays() {
     local orientation="${1}"
     local lock_fd rc=0
     local transform tw th bw bh top_refresh bottom_refresh
     local top_x=0 top_y=0 bottom_x=0 bottom_y=0
 
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     transform=$(zenbook-cosmic-transform "${orientation}")
@@ -146,8 +215,8 @@ function zenbook-rotate-displays() {
     bottom_refresh=$(zenbook-cosmic-refresh-mHz "${BOTTOM_RATE}")
 
     case "${orientation}" in
-        left-up) top_x=${bw}; top_y=0; bottom_x=0; bottom_y=0 ;;
-        right-up) top_x=0; top_y=0; bottom_x=${tw}; bottom_y=0 ;;
+        left-up) top_x=${bh}; top_y=0; bottom_x=0; bottom_y=0 ;;
+        right-up) top_x=0; top_y=0; bottom_x=${th}; bottom_y=0 ;;
         bottom-up) top_x=0; top_y=${th}; bottom_x=0; bottom_y=0 ;;
         *) top_x=0; top_y=0; bottom_x=0; bottom_y=${th} ;;
     esac

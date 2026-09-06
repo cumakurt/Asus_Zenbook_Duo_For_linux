@@ -8,7 +8,7 @@ function zenbook-ensure-runtime-dir() {
         echo "$(date) - FATAL - Runtime path exists and is not a directory: ${RUNTIME_DIR}" >&2
         return 1
     fi
-    mkdir -m 700 -p "${RUNTIME_DIR}" 2>/dev/null || true
+    mkdir -p "${RUNTIME_DIR}" 2>/dev/null || true
     chmod 700 "${RUNTIME_DIR}" 2>/dev/null || true
 
     # Refuse a world-writable or foreign-owned runtime dir (especially /tmp fallback).

@@ -269,8 +269,12 @@ function zenbook-share-mode() {
             if zenbook-keyboard-attached; then
                 KEYBOARD_ATTACHED=true
             fi
-            zenbook-enable-bottom-monitor || true
-            zenbook-rotate-displays bottom-up
+            if declare -F zenbook-facing-displays >/dev/null 2>&1; then
+                zenbook-facing-displays
+            else
+                zenbook-enable-bottom-monitor || true
+                zenbook-rotate-displays bottom-up
+            fi
             ;;
         *)
             echo "$(date) - UNKNOWN - share ${mode}"

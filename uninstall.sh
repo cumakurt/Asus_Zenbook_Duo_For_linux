@@ -36,7 +36,7 @@ if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
     S_ERR='✗'
     S_BULLET='•'
 else
-    C_RESET= C_BOLD= C_DIM= C_RED= C_GREEN= C_YELLOW= C_BLUE= C_CYAN=
+    C_RESET="" C_BOLD="" C_DIM="" C_RED="" C_GREEN="" C_YELLOW="" C_BLUE="" C_CYAN=""
     S_OK='OK'
     S_WARN='!'
     S_ERR='ERR'

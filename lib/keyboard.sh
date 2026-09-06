@@ -106,6 +106,31 @@ function zenbook-set-kb-backlight() {
     return 1
 }
 
+# Docked USB: hidraw/usbdevfs may not be ready on the first attach uevent.
+function zenbook-apply-docked-backlight() {
+    local level="${1:-${DEFAULT_BACKLIGHT:-3}}"
+    local attempt
+
+    if [[ ! "${level}" =~ ^[0-3]$ ]]; then
+        echo "$(date) - KEYBOARD - WARNING: invalid docked backlight level '${level}'" >&2
+        return 1
+    fi
+
+    for attempt in 1 2 3 4 5 6 7 8; do
+        if ! zenbook-keyboard-attached; then
+            echo "$(date) - KEYBOARD - docked backlight aborted (USB gone)"
+            return 1
+        fi
+        if zenbook-set-kb-backlight "${level}" "usb"; then
+            echo "$(date) - KEYBOARD - docked backlight=${level} (attempt ${attempt})"
+            return 0
+        fi
+        sleep 0.35
+    done
+    echo "$(date) - KEYBOARD - WARNING: docked backlight FEATURE not applied" >&2
+    return 1
+}
+
 function zenbook-cancel-detach-backlight() {
     local pid
     [[ -f "${DETACH_BACKLIGHT_PID_FILE}" ]] || return 0
@@ -189,7 +214,7 @@ function zenbook-heal-keyboard-inputs() {
         [[ "${name}" == Primax* ]] && continue
 
         case "${name}" in
-            *"Keyboard Mouse"|*"Duo Keyboard Mouse")
+            *"Keyboard Mouse")
                 if [[ "${has_touchpad}" -eq 1 && "${ZENBOOK_KEEP_DUO_MOUSE:-0}" != "1" ]]; then
                     xinput disable "${id}" >/dev/null 2>&1 || true
                     echo "$(date) - KEYBOARD - disabled conflicting Mouse id=${id}"
@@ -324,12 +349,15 @@ function zenbook-brighten-kb-for-detach() {
     fi
     zenbook-bt-connect-once "${mac}" || true
 
-    if zenbook-wait-bt-hid "${mac}" 12; then
+    zenbook-wait-bt-hid "${mac}" 12
+    local wait_rc=$?
+    if [[ "${wait_rc}" -eq 0 ]]; then
         echo "$(date) - KEYBOARD - BT HID ready (after connect)"
         zenbook-finish-detach-hid "${level}"
         return 0
+    elif [[ "${wait_rc}" -eq 2 ]]; then
+        return 0
     fi
-    [[ $? -eq 2 ]] && return 0
 
     # One recovery cycle only — not a loop.
     if ! zenbook-keyboard-attached && ! zenbook-bt-hid-ready; then
@@ -337,12 +365,15 @@ function zenbook-brighten-kb-for-detach() {
         zenbook-bt-disconnect-once "${mac}" || true
         sleep 1
         zenbook-bt-connect-once "${mac}" || true
-        if zenbook-wait-bt-hid "${mac}" 20; then
+        zenbook-wait-bt-hid "${mac}" 20
+        wait_rc=$?
+        if [[ "${wait_rc}" -eq 0 ]]; then
             echo "$(date) - KEYBOARD - BT HID ready (after recovery)"
             zenbook-finish-detach-hid "${level}"
             return 0
+        elif [[ "${wait_rc}" -eq 2 ]]; then
+            return 0
         fi
-        [[ $? -eq 2 ]] && return 0
     fi
 
     if zenbook-bt-hid-ready; then

@@ -84,15 +84,34 @@ function zenbook-output-geometry() {
     '
 }
 
+function zenbook-output-rotation() {
+    local output="${1}"
+    local show
+    show=$(gdctl show 2>/dev/null) || return 1
+    printf '%s\n' "${show}" | awk -v output="${output}" '
+        index($0, output) {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "transform:") {
+                    print $(i+1)
+                    exit
+                }
+            }
+        }
+    '
+}
+
 function zenbook-disable-bottom-monitor() {
     local lock_fd mode_spec rc
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     zenbook-save-bottom-windows
     mode_spec=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
     gdctl set \
-        --logical-monitor --primary \
+        --logical-monitor --primary --transform normal \
         --monitor "${TOP_OUTPUT}" --mode "${mode_spec}"
     rc=$?
 
@@ -108,17 +127,20 @@ function zenbook-disable-bottom-monitor() {
 }
 
 function zenbook-enable-bottom-monitor() {
-    local lock_fd top_mode bottom_mode rc
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    local lock_fd top_mode_spec bottom_mode_spec rc
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
-    top_mode=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
-    bottom_mode=$(zenbook-gnome-mode-spec "${BOTTOM_MODE}" "${BOTTOM_RATE}")
+    top_mode_spec=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
+    bottom_mode_spec=$(zenbook-gnome-mode-spec "${BOTTOM_MODE}" "${BOTTOM_RATE}")
     gdctl set \
         --logical-monitor --primary \
-        --monitor "${TOP_OUTPUT}" --mode "${top_mode}" \
+        --monitor "${TOP_OUTPUT}" --mode "${top_mode_spec}" \
         --logical-monitor --below "${TOP_OUTPUT}" \
-        --monitor "${BOTTOM_OUTPUT}" --mode "${bottom_mode}"
+        --monitor "${BOTTOM_OUTPUT}" --mode "${bottom_mode_spec}"
     rc=$?
 
     flock -u "${lock_fd}"
@@ -131,17 +153,63 @@ function zenbook-enable-bottom-monitor() {
     return ${rc}
 }
 
+function zenbook-mirror-displays() {
+    local lock_fd top_mode_spec bottom_mode_spec rc
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    top_mode_spec=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
+    bottom_mode_spec=$(zenbook-gnome-mode-spec "${BOTTOM_MODE}" "${BOTTOM_RATE}")
+    gdctl set \
+        --logical-monitor --primary \
+        --monitor "${TOP_OUTPUT}" --mode "${top_mode_spec}" \
+        --monitor "${BOTTOM_OUTPUT}" --mode "${bottom_mode_spec}"
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
+function zenbook-facing-displays() {
+    local lock_fd top_mode_spec bottom_mode_spec rc
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    top_mode_spec=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
+    bottom_mode_spec=$(zenbook-gnome-mode-spec "${BOTTOM_MODE}" "${BOTTOM_RATE}")
+    gdctl set \
+        --logical-monitor --primary --transform normal \
+        --monitor "${TOP_OUTPUT}" --mode "${top_mode_spec}" \
+        --logical-monitor --below "${TOP_OUTPUT}" --transform 180 \
+        --monitor "${BOTTOM_OUTPUT}" --mode "${bottom_mode_spec}"
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
 function zenbook-rotate-displays() {
     local orientation="${1}"
     local lock_fd rc=0
-    local top_mode bottom_mode transform
+    local top_mode_spec bottom_mode_spec transform
     local pos_flag="--below"
 
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
-    top_mode=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
-    bottom_mode=$(zenbook-gnome-mode-spec "${BOTTOM_MODE}" "${BOTTOM_RATE}")
+    top_mode_spec=$(zenbook-gnome-mode-spec "${TOP_MODE}" "${TOP_RATE}")
+    bottom_mode_spec=$(zenbook-gnome-mode-spec "${BOTTOM_MODE}" "${BOTTOM_RATE}")
     transform=$(zenbook-gnome-transform "${orientation}")
 
     case "${orientation}" in
@@ -154,13 +222,13 @@ function zenbook-rotate-displays() {
     if [ "${KEYBOARD_ATTACHED}" = true ]; then
         gdctl set \
             --logical-monitor --primary --transform "${transform}" \
-            --monitor "${TOP_OUTPUT}" --mode "${top_mode}" || rc=$?
+            --monitor "${TOP_OUTPUT}" --mode "${top_mode_spec}" || rc=$?
     else
         gdctl set \
             --logical-monitor --primary --transform "${transform}" \
-            --monitor "${TOP_OUTPUT}" --mode "${top_mode}" \
+            --monitor "${TOP_OUTPUT}" --mode "${top_mode_spec}" \
             --logical-monitor "${pos_flag}" "${TOP_OUTPUT}" --transform "${transform}" \
-            --monitor "${BOTTOM_OUTPUT}" --mode "${bottom_mode}" || rc=$?
+            --monitor "${BOTTOM_OUTPUT}" --mode "${bottom_mode_spec}" || rc=$?
     fi
 
     flock -u "${lock_fd}"

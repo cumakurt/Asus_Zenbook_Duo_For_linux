@@ -45,14 +45,32 @@ function zenbook-output-geometry() {
         '
 }
 
+function zenbook-output-rotation() {
+    local output="${1}"
+    xrandr --query 2>/dev/null |
+        awk -v output="${output}" '
+            $1 == output && $2 == "connected" {
+                for (i = 3; i <= NF; i++) {
+                    if ($i ~ /^(normal|left|right|inverted)$/) {
+                        print $i
+                        exit
+                    }
+                }
+            }
+        '
+}
+
 function zenbook-disable-bottom-monitor() {
     local lock_fd
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     zenbook-save-bottom-windows
     xrandr \
-        --output "${TOP_OUTPUT}" --primary --pos 0x0 \
+        --output "${TOP_OUTPUT}" --primary --mode "${TOP_MODE}" --rate "${TOP_RATE}" --rotate normal --pos 0x0 \
         --output "${BOTTOM_OUTPUT}" --off
     local rc=$?
 
@@ -70,7 +88,10 @@ function zenbook-disable-bottom-monitor() {
 
 function zenbook-enable-bottom-monitor() {
     local lock_fd
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     xrandr \
@@ -91,7 +112,10 @@ function zenbook-enable-bottom-monitor() {
 
 function zenbook-mirror-displays() {
     local lock_fd rc
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     xrandr \
@@ -108,10 +132,35 @@ function zenbook-mirror-displays() {
     return ${rc}
 }
 
+function zenbook-facing-displays() {
+    local lock_fd rc
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    xrandr \
+        --output "${TOP_OUTPUT}" --primary --mode "${TOP_MODE}" --rate "${TOP_RATE}" --rotate normal --pos 0x0 \
+        --output "${BOTTOM_OUTPUT}" --mode "${BOTTOM_MODE}" --rate "${BOTTOM_RATE}" --rotate inverted --below "${TOP_OUTPUT}"
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+
+    if (( rc == 0 )); then
+        zenbook-map-touch-inputs || true
+    fi
+    return ${rc}
+}
+
 function zenbook-rotate-displays() {
     local orientation="${1}"
     local lock_fd
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     local rc=0

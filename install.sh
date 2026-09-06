@@ -37,7 +37,7 @@ if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
     S_ERR='✗'
     S_BULLET='•'
 else
-    C_RESET= C_BOLD= C_DIM= C_RED= C_GREEN= C_YELLOW= C_BLUE= C_CYAN=
+    C_RESET="" C_BOLD="" C_DIM="" C_RED="" C_GREEN="" C_YELLOW="" C_BLUE="" C_CYAN=""
     S_OK='OK'
     S_WARN='!'
     S_ERR='ERR'
@@ -358,7 +358,7 @@ if session_can_start_helper; then
     )
     pkill -u "${TARGET_UID}" -f 'tee -a .*/zenbook/zenbook\\.log' 2>/dev/null || true
 
-    mkdir -m 700 -p "${runtime_dir}" 2>/dev/null || sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0700 "${runtime_dir}"
+    { mkdir -p "${runtime_dir}" 2>/dev/null && chmod 700 "${runtime_dir}" 2>/dev/null; } || sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0700 "${runtime_dir}"
     rm -f "${runtime_dir}/status" "${runtime_dir}/daemon.lock" "${runtime_dir}/detach-backlight.pid" 2>/dev/null || true
     sudo chown -R "${TARGET_USER}:${TARGET_GROUP}" "${runtime_dir}" 2>/dev/null || true
     nohup "${INSTALL_LOCATION}" >"${runtime_dir}/zenbook-session.log" 2>&1 &

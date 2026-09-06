@@ -1,6 +1,7 @@
 #!/bin/bash
 # Accelerometer orientation watcher (in-process; no full script re-exec).
 
+# shellcheck disable=SC2016
 function zenbook-watch-rotate() {
     local orientation
     echo "$(date) - ROTATE - Watching"
@@ -19,12 +20,18 @@ function zenbook-watch-rotate() {
                         echo "$(date) - ROTATE - ignored (${orientation}); rotate-lock=true"
                         continue
                     fi
-                    echo "$(date) - ROTATE - ${orientation}"
                     if zenbook-keyboard-attached; then
-                        KEYBOARD_ATTACHED=true
-                    else
-                        KEYBOARD_ATTACHED=false
+                        echo "$(date) - ROTATE - ignored (${orientation}); keyboard is docked"
+                        continue
                     fi
+                    # Debounce to filter out mechanical jolts during magnetic keyboard attach/detach
+                    sleep 0.35
+                    if zenbook-keyboard-attached; then
+                        echo "$(date) - ROTATE - ignored (${orientation}); keyboard docked during debounce"
+                        continue
+                    fi
+                    echo "$(date) - ROTATE - ${orientation}"
+                    KEYBOARD_ATTACHED=false
                     zenbook-rotate-displays "${orientation}"
                     MONITOR_COUNT=$(zenbook-monitor-count)
                     zenbook-set-status

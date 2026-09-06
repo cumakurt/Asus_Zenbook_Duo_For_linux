@@ -68,8 +68,29 @@ function zenbook-watch-display-backlight() {
         echo "$(date) - DISPLAY - Top-panel brightness interface not found; brightness sync disabled"
         return 0
     fi
-    while true; do
-        inotifywait -e modify "${TOP_BACKLIGHT}/brightness" >/dev/null 2>&1 || { sleep 1; continue; }
-        zenbook-sync-display-backlight
-    done
+    local top_name
+    top_name=$(basename "${TOP_BACKLIGHT}")
+
+    if command -v udevadm >/dev/null 2>&1; then
+        while true; do
+            while read -r _; do
+                zenbook-sync-display-backlight
+            done < <(
+                udevadm monitor --udev --subsystem-match=backlight 2>/dev/null |
+                    grep --line-buffered "${top_name}"
+            )
+            echo "$(date) - DISPLAY - udevadm monitor exited; restarting in 1s" >&2
+            sleep 1
+        done
+    else
+        local last_val="" cur_val
+        while true; do
+            cur_val=$(cat "${TOP_BACKLIGHT}/brightness" 2>/dev/null || echo "")
+            if [[ -n "${cur_val}" && "${cur_val}" != "${last_val}" ]]; then
+                last_val="${cur_val}"
+                zenbook-sync-display-backlight
+            fi
+            sleep 1
+        done
+    fi
 }

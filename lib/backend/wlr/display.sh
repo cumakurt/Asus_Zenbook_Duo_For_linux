@@ -68,13 +68,25 @@ function zenbook-output-geometry() {
     '
 }
 
+function zenbook-output-rotation() {
+    local output="${1}"
+    wlr-randr 2>/dev/null | awk -v out="${output}" '
+        $1 == out { in_out=1; next }
+        /^[a-zA-Z0-9]/ { in_out=0 }
+        in_out && /Transform:/ { print $2; exit }
+    '
+}
+
 function zenbook-disable-bottom-monitor() {
     local lock_fd rc
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     zenbook-save-bottom-windows
-    wlr-randr --output "${TOP_OUTPUT}" --on --pos 0,0 \
+    wlr-randr --output "${TOP_OUTPUT}" --on --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
               --output "${BOTTOM_OUTPUT}" --off
     rc=$?
 
@@ -91,7 +103,10 @@ function zenbook-disable-bottom-monitor() {
 
 function zenbook-enable-bottom-monitor() {
     local lock_fd rc top_h
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     top_h=${TOP_MODE#*x}
@@ -112,18 +127,61 @@ function zenbook-enable-bottom-monitor() {
     return ${rc}
 }
 
+function zenbook-mirror-displays() {
+    local lock_fd rc
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    wlr-randr \
+        --output "${TOP_OUTPUT}" --on \
+        --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
+        --output "${BOTTOM_OUTPUT}" --on \
+        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos 0,0 --transform normal
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
+function zenbook-facing-displays() {
+    local lock_fd rc top_h
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
+    flock -x "${lock_fd}"
+
+    top_h=${TOP_MODE#*x}
+    wlr-randr \
+        --output "${TOP_OUTPUT}" --on \
+        --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
+        --output "${BOTTOM_OUTPUT}" --on \
+        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos "0,${top_h}" --transform 180
+    rc=$?
+
+    flock -u "${lock_fd}"
+    exec {lock_fd}>&-
+    return ${rc}
+}
+
 function zenbook-rotate-displays() {
     local orientation="${1}"
     local lock_fd rc=0
-    local transform top_w top_h bottom_w
+    local transform top_h bottom_h
 
-    exec {lock_fd}>"${DISPLAY_LOCK}"
+    if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
+        return 1
+    fi
     flock -x "${lock_fd}"
 
     transform=$(zenbook-wlr-transform "${orientation}")
-    top_w=${TOP_MODE%x*}
     top_h=${TOP_MODE#*x}
-    bottom_w=${BOTTOM_MODE%x*}
+    bottom_h=${BOTTOM_MODE#*x}
 
     if [ "${KEYBOARD_ATTACHED}" = true ]; then
         wlr-randr \
@@ -135,7 +193,7 @@ function zenbook-rotate-displays() {
             left-up)
                 wlr-randr \
                     --output "${TOP_OUTPUT}" --on --mode "${TOP_MODE}@${TOP_RATE}Hz" \
-                    --pos "${bottom_w},0" --transform "${transform}" \
+                    --pos "${bottom_h},0" --transform "${transform}" \
                     --output "${BOTTOM_OUTPUT}" --on --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" \
                     --pos 0,0 --transform "${transform}" || rc=$?
                 ;;
@@ -144,7 +202,7 @@ function zenbook-rotate-displays() {
                     --output "${TOP_OUTPUT}" --on --mode "${TOP_MODE}@${TOP_RATE}Hz" \
                     --pos 0,0 --transform "${transform}" \
                     --output "${BOTTOM_OUTPUT}" --on --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" \
-                    --pos "${top_w},0" --transform "${transform}" || rc=$?
+                    --pos "${top_h},0" --transform "${transform}" || rc=$?
                 ;;
             bottom-up)
                 wlr-randr \
