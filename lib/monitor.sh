@@ -120,25 +120,56 @@ function zenbook-check-monitor() {
 }
 
 function zenbook-watch-monitor() {
-    local last_apply_ms=0 now_ms
+    local last_apply_ms=0 now_ms line discard need_recheck=0 read_rc
+    echo "$(date) - MONITOR - Watching for USB events"
     while true; do
-        echo "$(date) - MONITOR - Waiting for USB event"
-        # Recursive: device nodes live under /dev/bus/usb/<bus>/, not the top dir.
-        if ! inotifywait -qq -r -e attrib,create,delete /dev/bus/usb 2>/dev/null; then
-            sleep 1
+        if ! command -v inotifywait >/dev/null 2>&1; then
+            echo "$(date) - MONITOR - inotifywait not found; polling USB state every 2s" >&2
+            sleep 2
+            zenbook-check-monitor
             continue
         fi
-        # Debounce bursty USB uevents (composite HID + pogo pin chatter).
-        sleep 1.0
-        now_ms=$(date +%s%3N 2>/dev/null || date +%s)
-        # Drop back-to-back applies from duplicate watchers / event storms.
-        if [[ "${now_ms}" =~ ^[0-9]+$ && "${last_apply_ms}" =~ ^[0-9]+$ ]]; then
-            if (( now_ms - last_apply_ms < 1500 )); then
-                echo "$(date) - MONITOR - USB event debounced"
+
+        need_recheck=0
+        while true; do
+            if [[ "${need_recheck}" -eq 1 ]]; then
+                # Trailing-edge: after cool-down, re-check even if no new USB event.
+                line=""
+                read -r -t 0.4 line
+                read_rc=$?
+                if (( read_rc > 128 )); then
+                    : # timeout — apply pending recheck below
+                elif (( read_rc != 0 )); then
+                    break # EOF from inotifywait
+                fi
+            else
+                if ! read -r line; then
+                    break
+                fi
+            fi
+
+            if [[ -n "${line}" ]]; then
+                # Debounce bursty USB uevents (composite HID + pogo pin chatter).
+                sleep 0.5
+                while read -r -t 0.1 discard; do :; done
+                need_recheck=1
+            elif [[ "${need_recheck}" -ne 1 ]]; then
                 continue
             fi
-        fi
-        last_apply_ms=${now_ms}
-        zenbook-check-monitor
+
+            now_ms=$(date +%s%3N 2>/dev/null || date +%s)
+            if [[ "${now_ms}" =~ ^[0-9]+$ && "${last_apply_ms}" =~ ^[0-9]+$ ]]; then
+                if (( now_ms - last_apply_ms < 1000 )); then
+                    need_recheck=1
+                    continue
+                fi
+            fi
+            need_recheck=0
+            last_apply_ms=${now_ms}
+            zenbook-check-monitor
+        done < <(inotifywait -m -q -r -e attrib,create,delete /dev/bus/usb 2>/dev/null)
+
+        echo "$(date) - MONITOR - inotifywait exited; restarting in 1s" >&2
+        sleep 1
     done
 }

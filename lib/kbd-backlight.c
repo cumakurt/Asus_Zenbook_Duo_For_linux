@@ -54,6 +54,7 @@ static int read_sysfs_u16(const char *path, unsigned int *out)
 		return -1;
 	}
 	fclose(fp);
+	buf[strcspn(buf, "\r\n")] = '\0';
 	return parse_u16(buf, out);
 }
 
@@ -71,6 +72,7 @@ static int read_sysfs_int(const char *path, int *out)
 		return -1;
 	}
 	fclose(fp);
+	buf[strcspn(buf, "\r\n")] = '\0';
 	errno = 0;
 	value = strtol(buf, &end, 10);
 	if (errno != 0 || end == buf) {
@@ -316,7 +318,7 @@ static int set_backlight_hidraw(unsigned int vendor_id, unsigned int product_id,
 	DIR *dir = opendir("/sys/class/hidraw");
 	struct dirent *ent;
 	char nodes[8][PATH_MAX];
-	char uevents[8][512];
+	char uevents[8][1024];
 	int count = 0;
 	int i;
 	int pass;

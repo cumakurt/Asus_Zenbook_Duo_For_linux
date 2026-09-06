@@ -101,7 +101,11 @@ function zenbook-disable-bottom-monitor() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     zenbook-save-bottom-windows
     hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1,transform,0" >/dev/null || rc=$?
@@ -124,7 +128,11 @@ function zenbook-enable-bottom-monitor() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     top_h=${TOP_MODE#*x}
     hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1" >/dev/null || rc=$?
@@ -146,7 +154,11 @@ function zenbook-mirror-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1" >/dev/null || rc=$?
     hyprctl keyword monitor "${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},0x0,1,mirror,${TOP_OUTPUT}" >/dev/null || rc=$?
@@ -162,7 +174,11 @@ function zenbook-facing-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     top_h=${TOP_MODE#*x}
     hyprctl keyword monitor "${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x0,1,transform,0" >/dev/null || rc=$?
@@ -183,7 +199,11 @@ function zenbook-rotate-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     transform=$(zenbook-hypr-transform "${orientation}")
     top_h=${TOP_MODE#*x}
@@ -203,7 +223,7 @@ function zenbook-rotate-displays() {
                 bottom_spec="${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},${top_h}x0,1,transform,${transform}"
                 ;;
             bottom-up)
-                top_spec="${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x${top_h},1,transform,${transform}"
+                top_spec="${TOP_OUTPUT},${TOP_MODE}@${TOP_RATE},0x${bottom_h},1,transform,${transform}"
                 bottom_spec="${BOTTOM_OUTPUT},${BOTTOM_MODE}@${BOTTOM_RATE},0x0,1,transform,${transform}"
                 ;;
             *)

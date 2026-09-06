@@ -311,10 +311,9 @@ rm -f "${AUTOSTART_DIR}/zenbook-duo.desktop" 2>/dev/null || true
 ok "${AUTOSTART_FILE#"${HOME}"/}"
 
 step "USB/BT keyboard access"
-if zenbook-configure-udev-keyboard "${UDEV_RULE}"; then
-    ok "udev uaccess rule installed (USB + Bluetooth hidraw)"
-else
-    ok "udev rule installed (USB + Bluetooth hidraw)"
+zenbook-configure-udev-keyboard "${UDEV_RULE}" || die "udev rule install failed"
+ok "udev uaccess rule installed (USB + Bluetooth hidraw)"
+if ! lsusb 2>/dev/null | grep -qi 'Zenbook Duo Keyboard'; then
     warn "Keyboard not plugged in yet — replug or re-pair BT after install if needed"
 fi
 sudo rm -f /etc/udev/rules.d/70-zenbook-duo-keyboard.rules 2>/dev/null || true
@@ -345,16 +344,16 @@ if session_can_start_helper; then
         [[ -n "${pid}" && "${pid}" != "$$" ]] || continue
         kill "${pid}" 2>/dev/null || true
     done < <(
-        pgrep -u "${TARGET_UID}" -f '(^|/)zenbook(\\.sh)?( |$)' 2>/dev/null || true
-        pgrep -u "${TARGET_UID}" -f '/usr/local/(bin|lib)/zenbook' 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f "^${INSTALL_LOCATION}( |$)" 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f "^${INSTALL_ROOT}/zenbook\\.sh( |$)" 2>/dev/null || true
     )
     sleep 0.6
     while read -r pid; do
         [[ -n "${pid}" && "${pid}" != "$$" ]] || continue
         kill -9 "${pid}" 2>/dev/null || true
     done < <(
-        pgrep -u "${TARGET_UID}" -f '(^|/)zenbook(\\.sh)?( |$)' 2>/dev/null || true
-        pgrep -u "${TARGET_UID}" -f '/usr/local/(bin|lib)/zenbook' 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f "^${INSTALL_LOCATION}( |$)" 2>/dev/null || true
+        pgrep -u "${TARGET_UID}" -f "^${INSTALL_ROOT}/zenbook\\.sh( |$)" 2>/dev/null || true
     )
     pkill -u "${TARGET_UID}" -f 'tee -a .*/zenbook/zenbook\\.log' 2>/dev/null || true
 

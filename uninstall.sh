@@ -225,7 +225,7 @@ if [[ -L "${INSTALL_LOCATION}" || -e "${INSTALL_LOCATION}" ]]; then
     # Only remove if it points at our tree or is our known path.
     if [[ -L "${INSTALL_LOCATION}" ]]; then
         target=$(readlink -f -- "${INSTALL_LOCATION}" 2>/dev/null || true)
-        if [[ "${target}" == "${INSTALL_ROOT}/zenbook.sh" || "${INSTALL_LOCATION}" == /usr/local/bin/zenbook ]]; then
+        if [[ "${target}" == "${INSTALL_ROOT}/zenbook.sh" ]]; then
             remove_path "${INSTALL_LOCATION}" 1
         else
             warn "skip ${INSTALL_LOCATION} (unexpected target: ${target:-unknown})"

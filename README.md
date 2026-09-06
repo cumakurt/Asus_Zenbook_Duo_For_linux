@@ -16,7 +16,7 @@ This project closes the gap between ASUS dual-panel hardware behaviour and what 
 
 **Problem:** On the Zenbook Duo, attaching the physical keyboard should turn the bottom OLED into a keyboard base (single-panel mode). Detaching it should restore the second display. Linux does not do this automatically for most desktops.
 
-**Solution:** The helper watches USB attach/detach events for the Duo keyboard (`ASUS Zenbook Duo Keyboard`, VID:PID `0b05:1bf2` / legacy `0b05:1b2c`) and enables or disables `eDP-2` through the correct display backend for your session.
+**Solution:** The helper watches USB attach/detach events for the Duo keyboard (`ASUS Zenbook Duo Keyboard`, VID:PID `0b05:1bf2` / legacy `0b05:1b2c`) via a continuous `inotifywait` stream on `/dev/bus/usb`, with trailing-edge debounce so pogo-pin chatter cannot skip the final dock/undock state. Detection prefers fast sysfs VID/PID reads (with `lsusb` fallback) and enables or disables `eDP-2` through the correct display backend for your session.
 
 ### 2. Dual OLED layout is not managed by the desktop
 
@@ -50,7 +50,7 @@ Default panel modes: `2880x1800@120` (top and bottom; UX8406CA native).
 
 **Problem:** The two OLEDs often expose separate backlight devices. Changing brightness in the desktop UI typically updates only the top panel (`intel_backlight`), leaving the ScreenPad/bottom panel dim or stuck.
 
-**Solution:** The helper monitors top-panel brightness events using `udevadm monitor` (with a lightweight polling fallback for reliability, avoiding sysfs inotify limitations) and mirrors the level to the bottom backlight (`card*-eDP-2-backlight` or `asus_screenpad`), scaled by each device’s `max_brightness`.
+**Solution:** The helper monitors top-panel brightness events using `udevadm monitor` (with a lightweight polling fallback). Levels are mirrored to the bottom backlight (`card*-eDP-2-backlight` or `asus_screenpad`) only after `brightness` / `max_brightness` values validate as integers, scaled by each device’s range. If the top backlight sysfs node is missing at start, the watcher waits and retries instead of exiting.
 
 ### 5. Detachable keyboard backlight has no first-class Linux control
 
@@ -68,7 +68,7 @@ Default panel modes: `2880x1800@120` (top and bottom; UX8406CA native).
 
 **Problem:** Accelerometer orientation changes (laptop / tablet / tent) are not wired to dual-panel RandR/compositor layouts on most Linux setups.
 
-**Solution:** `monitor-sensor` orientation events are mapped to layout commands (`normal`, `left-up`, `right-up`, `bottom-up`) and applied through the active display backend with flock concurrency locking. Orientation changes are automatically debounced to filter out mechanical jolts when snapping or removing the magnetic keyboard, and ignored while the keyboard is docked.
+**Solution:** `monitor-sensor` orientation events are mapped to layout commands (`normal`, `left-up`, `right-up`, `bottom-up`) and applied through the active display backend with flock concurrency locking. A trailing-edge debounce keeps the latest orientation after a quiet window (and folds events queued during slow layout applies), filters magnetic dock jolts, and ignores changes while the keyboard is docked. Absolute backends (KDE / wlroots / Hyprland / COSMIC) place the inverted top panel using the bottom panel’s height so unequal modes do not gap or overlap.
 
 ### 8. “Works on one desktop only” install scripts
 
@@ -128,20 +128,21 @@ This helper targets **Duo dual-OLED + detachable keyboard** behaviour. It is **n
 
 | Feature                                                     | Status                                                     |
 | ----------------------------------------------------------- | ---------------------------------------------------------- |
-| USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes                                                        |
+| USB dock detect (`ASUS Zenbook Duo Keyboard` / `0b05:1bf2`) | Yes (sysfs-first + continuous inotify, trailing-edge debounce) |
 | Bottom OLED enable/disable with dock                        | Yes                                                        |
 | Stacked dual-panel layout (`eDP-1` / `eDP-2`)               | Yes                                                        |
 | Native modes (default 2880×1800 @120 / @120)                | Yes                                                        |
 | Keyboard backlight 0–3 (USB HID)                            | Yes (with dock attach retry)                               |
-| Dual-panel brightness sync                                  | Yes (via udevadm event stream, polling fallback)           |
-| Accelerometer rotation layouts                              | Yes (debounced, flock-synchronized)                        |
+| Dual-panel brightness sync                                  | Yes (validated sysfs values; udevadm + polling fallback)   |
+| Accelerometer rotation layouts                              | Yes (trailing-edge debounce, flock-synchronized)           |
 | Rotation lock                                               | Yes                                                        |
 | Sharing: extend / duplicate (mirror) / facing               | Yes (all backends: X11, GNOME, KDE, WLR, Hyprland, COSMIC) |
 | Soft / on-screen keyboard launch                            | Yes (supports `squeekboard`, `maliit`, `onboard`, `kvkbd`) |
 | Dual OLED touch/stylus map-to-output (X11)                  | Yes (`ELAN9008`/`ELAN9009`)                                |
 | BT keyboard battery in `status`                             | Best-effort via BlueZ                                      |
-| Wi-Fi / Bluetooth preference restore                        | Yes                                                        |
+| Wi-Fi / Bluetooth preference restore                        | Yes (DBus state transitions only; no per-event sleep)      |
 | Multi-DE backends (X11/GNOME/KDE/wlroots/Hyprland/COSMIC)   | Yes                                                        |
+| Daemon watcher self-heal                                    | Yes (`wait -n` restarts crashed watchers)                  |
 
 
 
@@ -182,7 +183,7 @@ Kernel `hid-asus` quirks for Duo keyboard IDs complement this project; they are 
 | `cosmic`   | `cosmic-randr`   | System76 COSMIC                                           | Yes             |
 
 
-All display backends synchronize mode switches, rotation, dock changes, and sharing modes through file locks (`flock`) to prevent race conditions during rapid docking/undocking or sensor events.
+All display backends synchronize mode switches, rotation, dock changes, and sharing modes through checked file locks (`flock`); lock acquisition failures abort the layout change instead of proceeding unlocked. Absolute bottom-up layouts offset the top panel by the bottom panel height.
 
 If the preferred tool is missing, the installer/runtime probes other backends in a safe order.
 
@@ -194,26 +195,26 @@ If the preferred tool is missing, the installer/runtime probes other backends in
 
 ```text
 install.sh                 # detect OS/DE → deps → install → udev → autostart
-zenbook.sh                 # runtime entry: detect → backend → profile → watchers
+zenbook.sh                 # runtime entry: detect → backend → profile → supervised watchers
 lib/
   detect/                  # OS + desktop/compositor detection
   profile/                 # DE×session command preferences (mate-x11, gnome-wayland, …)
   profile.sh               # profile loader / softkbd prefs / capability flags
   install/                 # deps, autostart, udev, cleanup, C build
   backend/{x11,gnome,kde,wlr,hyprland,cosmic}/
-  keyboard.sh              # USB keyboard detect + kbd-backlight
+  keyboard.sh              # sysfs-first USB detect + kbd-backlight
   touch.sh                 # X11 dual OLED touch/stylus map-to-output
   kbd-backlight.c          # native HID backlight (compiled at install)
-  monitor.sh               # attach/detach orchestration
+  monitor.sh               # attach/detach orchestration (inotify + trailing-edge)
   brightness.sh            # panel brightness sync
   network.sh               # Wi-Fi / Bluetooth watchers
   features.sh              # share / bottom / softkbd / status
-  rotate.sh                # accelerometer → layout
+  rotate.sh                # accelerometer → layout (trailing-edge debounce)
   cli.sh                   # ACPI / kbb / rotate / Duo CLI
   config.sh                # outputs, modes, paths
 ```
 
-Profiles (`lib/profile/<de>-<session>.sh`) choose environment-specific command preferences; backends (`lib/backend/<tool>/`) implement the actual display IPC.
+Profiles (`lib/profile/<de>-<session>.sh`) choose environment-specific command preferences; backends (`lib/backend/<tool>/`) implement the actual display IPC. The daemon supervises watcher children and restarts them if one exits.
 
 Runtime state lives under `$XDG_RUNTIME_DIR/zenbook/` (fallback `/tmp/zenbook/`).
 
@@ -281,10 +282,10 @@ Examples:
 3. Installs modules to `/usr/local/lib/zenbook/` and links `/usr/local/bin/zenbook`
 4. Compiles `lib/kbd-backlight.c` → `kbd-backlight`
 5. Writes XDG autostart for the detected desktop
-6. Installs udev `uaccess` for USB + Bluetooth hidraw (`KERNELS==0005:…`)  
+6. Installs udev `uaccess` for known USB + Bluetooth hidraw IDs (`KERNELS==0005:…`) even if the keyboard is undocked at install time  
 7. Keeps BlueZ `ExportClaimedServices` read-only (required for BT keyboard HID)  
 8. Removes obsolete systemd/sudoers hooks from earlier helper installs  
-9. Starts the helper in the current graphical session when possible
+9. Stops only this helper’s entrypoint processes (anchored path match), then starts it in the current graphical session when possible
 
 ---
 
@@ -301,7 +302,8 @@ After install, the helper starts with your desktop session and:
 - reacts to keyboard attach/detach  
 - syncs bottom-panel brightness  
 - applies rotation from the accelerometer  
-- keeps Wi-Fi/Bluetooth policy consistent
+- keeps Wi-Fi/Bluetooth policy consistent  
+- restarts crashed watchers automatically
 
 Logs: `$XDG_RUNTIME_DIR/zenbook/zenbook.log` (fallback: `/tmp/zenbook/zenbook.log`, plus session start log when launched by installer).
 
@@ -345,7 +347,7 @@ export ZENBOOK_BACKEND_OVERRIDE=x11   # force backend (debug)
 
 ## Security model
 
-The keyboard USB device is tagged for the active local seat so the backlight helper can open `/dev/bus/usb/...` without privilege escalation.
+The keyboard USB device is tagged for the active local seat so the backlight helper can open `/dev/bus/usb/...` without privilege escalation. Uninstall only removes `/usr/local/bin/zenbook` when the symlink resolves to this project’s `zenbook.sh`. Installer process cleanup matches the helper entrypoint paths only (not unrelated commands whose argv mentions “zenbook”).
 
 ---
 

@@ -8,14 +8,35 @@
 # - Recovery: at most one disconnect+connect per undock. Never GATT. Never reconnect loops.
 
 function zenbook-keyboard-usb-id() {
-    local id
+    local dev v p prod id
+    # Fast path: check sysfs first without spawning lsusb
+    for dev in /sys/bus/usb/devices/*; do
+        [[ -f "${dev}/idVendor" && -f "${dev}/idProduct" ]] || continue
+        v=$(<"${dev}/idVendor") 2>/dev/null || continue
+        p=$(<"${dev}/idProduct") 2>/dev/null || continue
+        for id in ${KEYBOARD_USB_IDS}; do
+            if [[ "${id,,}" == "${v,,}:${p,,}" ]]; then
+                printf '%s\n' "${id}"
+                return 0
+            fi
+        done
+        if [[ -f "${dev}/product" ]]; then
+            prod=$(<"${dev}/product") 2>/dev/null || true
+            if [[ "${prod,,}" == *"${KEYBOARD_PRODUCT_NAME,,}"* || "${prod,,}" == *"zenbook duo keyboard"* ]]; then
+                printf '%s\n' "${v}:${p}"
+                return 0
+            fi
+        fi
+    done
+
+    # Fallback to lsusb
     for id in ${KEYBOARD_USB_IDS}; do
         if lsusb -d "${id}" >/dev/null 2>&1; then
             printf '%s\n' "${id}"
             return 0
         fi
     done
-    lsusb | awk -v name="${KEYBOARD_PRODUCT_NAME}" '
+    lsusb 2>/dev/null | awk -v name="${KEYBOARD_PRODUCT_NAME}" '
         BEGIN { IGNORECASE = 1 }
         index(tolower($0), tolower(name)) {
             print $6
@@ -25,7 +46,26 @@ function zenbook-keyboard-usb-id() {
 }
 
 function zenbook-keyboard-attached() {
-    local id
+    local dev v p prod id
+    # Fast path: direct sysfs inspection (orders of magnitude faster than lsusb)
+    for dev in /sys/bus/usb/devices/*; do
+        [[ -f "${dev}/idVendor" && -f "${dev}/idProduct" ]] || continue
+        v=$(<"${dev}/idVendor") 2>/dev/null || continue
+        p=$(<"${dev}/idProduct") 2>/dev/null || continue
+        for id in ${KEYBOARD_USB_IDS}; do
+            if [[ "${id,,}" == "${v,,}:${p,,}" ]]; then
+                return 0
+            fi
+        done
+        if [[ -f "${dev}/product" ]]; then
+            prod=$(<"${dev}/product") 2>/dev/null || true
+            if [[ "${prod,,}" == *"${KEYBOARD_PRODUCT_NAME,,}"* || "${prod,,}" == *"zenbook duo keyboard"* ]]; then
+                return 0
+            fi
+        fi
+    done
+
+    # Fallback to lsusb
     for id in ${KEYBOARD_USB_IDS}; do
         if lsusb -d "${id}" >/dev/null 2>&1; then
             return 0
@@ -132,12 +172,18 @@ function zenbook-apply-docked-backlight() {
 }
 
 function zenbook-cancel-detach-backlight() {
-    local pid
+    local pid wait_count=0
     [[ -f "${DETACH_BACKLIGHT_PID_FILE}" ]] || return 0
     pid=$(cat "${DETACH_BACKLIGHT_PID_FILE}" 2>/dev/null || true)
     if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
         kill "${pid}" 2>/dev/null || true
-        wait "${pid}" 2>/dev/null || true
+        while kill -0 "${pid}" 2>/dev/null && (( wait_count < 10 )); do
+            sleep 0.1
+            (( wait_count++ ))
+        done
+        if kill -0 "${pid}" 2>/dev/null; then
+            kill -9 "${pid}" 2>/dev/null || true
+        fi
     fi
     rm -f "${DETACH_BACKLIGHT_PID_FILE}"
 }

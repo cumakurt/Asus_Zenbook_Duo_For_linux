@@ -10,9 +10,12 @@ SCRIPT_PATH=$(readlink -f -- "${BASH_SOURCE[0]}")
 SCRIPT_DIR=$(cd -- "$(dirname -- "${SCRIPT_PATH}")" && pwd)
 ZENBOOK_LIB_DIR="${SCRIPT_DIR}/lib"
 ZENBOOK_PIDS=()
+declare -A ZENBOOK_WATCHER_FUNCS=()
+ZENBOOK_STOP=0
 
 zenbook-cleanup() {
     local pid
+    ZENBOOK_STOP=1
     zenbook-cancel-detach-backlight 2>/dev/null || true
     for pid in "${ZENBOOK_PIDS[@]:-}"; do
         if [[ -n "${pid}" ]]; then
@@ -142,18 +145,59 @@ function main() {
     zenbook-check-monitor 1
     zenbook-map-touch-inputs || true
 
-    zenbook-watch-monitor &
-    ZENBOOK_PIDS+=("$!")
-    zenbook-watch-rotate &
-    ZENBOOK_PIDS+=("$!")
-    zenbook-watch-display-backlight &
-    ZENBOOK_PIDS+=("$!")
-    zenbook-watch-wifi &
-    ZENBOOK_PIDS+=("$!")
-    zenbook-watch-bluetooth &
-    ZENBOOK_PIDS+=("$!")
+    zenbook-start-watcher zenbook-watch-monitor
+    zenbook-start-watcher zenbook-watch-rotate
+    zenbook-start-watcher zenbook-watch-display-backlight
+    zenbook-start-watcher zenbook-watch-wifi
+    zenbook-start-watcher zenbook-watch-bluetooth
 
-    wait
+    zenbook-supervise-watchers
+}
+
+function zenbook-start-watcher() {
+    local func="${1}"
+    local pid
+    "${func}" &
+    pid=$!
+    ZENBOOK_PIDS+=("${pid}")
+    ZENBOOK_WATCHER_FUNCS["${pid}"]="${func}"
+}
+
+function zenbook-supervise-watchers() {
+    local pid func restarted
+    local -a alive_pids
+    while [[ "${ZENBOOK_STOP}" -eq 0 ]]; do
+        wait -n || true
+        [[ "${ZENBOOK_STOP}" -eq 0 ]] || break
+
+        alive_pids=()
+        restarted=0
+        for pid in "${ZENBOOK_PIDS[@]:-}"; do
+            [[ -n "${pid}" ]] || continue
+            if kill -0 "${pid}" 2>/dev/null; then
+                alive_pids+=("${pid}")
+                continue
+            fi
+            func="${ZENBOOK_WATCHER_FUNCS[${pid}]:-}"
+            unset "ZENBOOK_WATCHER_FUNCS[${pid}]"
+            if [[ -z "${func}" ]]; then
+                continue
+            fi
+            echo "$(date) - INIT - watcher ${func} (pid ${pid}) exited; restarting" >&2
+            "${func}" &
+            pid=$!
+            alive_pids+=("${pid}")
+            ZENBOOK_WATCHER_FUNCS["${pid}"]="${func}"
+            restarted=1
+        done
+        ZENBOOK_PIDS=("${alive_pids[@]}")
+
+        # If wait -n returned for a non-watcher child (e.g. log tee), keep supervising.
+        if [[ "${restarted}" -eq 0 && ${#ZENBOOK_PIDS[@]} -eq 0 ]]; then
+            echo "$(date) - INIT - all watchers gone; exiting" >&2
+            break
+        fi
+    done
 }
 
 if [ -z "${1:-}" ]; then

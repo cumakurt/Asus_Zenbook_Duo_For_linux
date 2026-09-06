@@ -78,17 +78,20 @@ function zenbook-output-rotation() {
 }
 
 function zenbook-disable-bottom-monitor() {
-    local lock_fd rc
+    local lock_fd rc=0
     if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     zenbook-save-bottom-windows
     wlr-randr --output "${TOP_OUTPUT}" --on --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
-              --output "${BOTTOM_OUTPUT}" --off
-    rc=$?
+              --output "${BOTTOM_OUTPUT}" --off || rc=$?
 
     if (( rc == 0 )); then
         zenbook-move-saved-windows-to-top
@@ -102,20 +105,23 @@ function zenbook-disable-bottom-monitor() {
 }
 
 function zenbook-enable-bottom-monitor() {
-    local lock_fd rc top_h
+    local lock_fd rc=0 top_h
     if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     top_h=${TOP_MODE#*x}
     wlr-randr \
         --output "${TOP_OUTPUT}" --on \
         --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
         --output "${BOTTOM_OUTPUT}" --on \
-        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos "0,${top_h}" --transform normal
-    rc=$?
+        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos "0,${top_h}" --transform normal || rc=$?
 
     flock -u "${lock_fd}"
     exec {lock_fd}>&-
@@ -128,19 +134,22 @@ function zenbook-enable-bottom-monitor() {
 }
 
 function zenbook-mirror-displays() {
-    local lock_fd rc
+    local lock_fd rc=0
     if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     wlr-randr \
         --output "${TOP_OUTPUT}" --on \
         --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
         --output "${BOTTOM_OUTPUT}" --on \
-        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos 0,0 --transform normal
-    rc=$?
+        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos 0,0 --transform normal || rc=$?
 
     flock -u "${lock_fd}"
     exec {lock_fd}>&-
@@ -148,20 +157,23 @@ function zenbook-mirror-displays() {
 }
 
 function zenbook-facing-displays() {
-    local lock_fd rc top_h
+    local lock_fd rc=0 top_h
     if ! exec {lock_fd}>"${DISPLAY_LOCK}"; then
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     top_h=${TOP_MODE#*x}
     wlr-randr \
         --output "${TOP_OUTPUT}" --on \
         --mode "${TOP_MODE}@${TOP_RATE}Hz" --pos 0,0 --transform normal \
         --output "${BOTTOM_OUTPUT}" --on \
-        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos "0,${top_h}" --transform 180
-    rc=$?
+        --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" --pos "0,${top_h}" --transform 180 || rc=$?
 
     flock -u "${lock_fd}"
     exec {lock_fd}>&-
@@ -177,7 +189,11 @@ function zenbook-rotate-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     transform=$(zenbook-wlr-transform "${orientation}")
     top_h=${TOP_MODE#*x}
@@ -207,7 +223,7 @@ function zenbook-rotate-displays() {
             bottom-up)
                 wlr-randr \
                     --output "${TOP_OUTPUT}" --on --mode "${TOP_MODE}@${TOP_RATE}Hz" \
-                    --pos "0,${top_h}" --transform "${transform}" \
+                    --pos "0,${bottom_h}" --transform "${transform}" \
                     --output "${BOTTOM_OUTPUT}" --on --mode "${BOTTOM_MODE}@${BOTTOM_RATE}Hz" \
                     --pos 0,0 --transform "${transform}" || rc=$?
                 ;;

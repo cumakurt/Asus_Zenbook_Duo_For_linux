@@ -95,7 +95,11 @@ function zenbook-disable-bottom-monitor() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     zenbook-save-bottom-windows
     w=${TOP_MODE%x*}
@@ -121,7 +125,11 @@ function zenbook-enable-bottom-monitor() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     tw=${TOP_MODE%x*}
     th=${TOP_MODE#*x}
@@ -151,7 +159,11 @@ function zenbook-mirror-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     tw=${TOP_MODE%x*}
     th=${TOP_MODE#*x}
@@ -175,7 +187,11 @@ function zenbook-facing-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     tw=${TOP_MODE%x*}
     th=${TOP_MODE#*x}
@@ -204,7 +220,11 @@ function zenbook-rotate-displays() {
         echo "$(date) - DISPLAY - ERROR: cannot open display lock" >&2
         return 1
     fi
-    flock -x "${lock_fd}"
+    if ! flock -x "${lock_fd}"; then
+        echo "$(date) - DISPLAY - ERROR: cannot acquire display lock" >&2
+        exec {lock_fd}>&-
+        return 1
+    fi
 
     transform=$(zenbook-cosmic-transform "${orientation}")
     tw=${TOP_MODE%x*}
@@ -217,7 +237,7 @@ function zenbook-rotate-displays() {
     case "${orientation}" in
         left-up) top_x=${bh}; top_y=0; bottom_x=0; bottom_y=0 ;;
         right-up) top_x=0; top_y=0; bottom_x=${th}; bottom_y=0 ;;
-        bottom-up) top_x=0; top_y=${th}; bottom_x=0; bottom_y=0 ;;
+        bottom-up) top_x=0; top_y=${bh}; bottom_x=0; bottom_y=0 ;;
         *) top_x=0; top_y=0; bottom_x=0; bottom_y=${th} ;;
     esac
 

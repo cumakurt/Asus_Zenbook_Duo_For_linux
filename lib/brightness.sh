@@ -43,9 +43,17 @@ function zenbook-sync-display-backlight() {
     [ -r "${BOTTOM_BACKLIGHT}/brightness" ] || return 0
 
     local current top_max bottom_max target
-    current=$(cat "${TOP_BACKLIGHT}/brightness")
-    top_max=$(cat "${TOP_BACKLIGHT}/max_brightness" 2>/dev/null || echo 0)
-    bottom_max=$(cat "${BOTTOM_BACKLIGHT}/max_brightness" 2>/dev/null || echo 0)
+    current=$(cat "${TOP_BACKLIGHT}/brightness" 2>/dev/null || echo "")
+    top_max=$(cat "${TOP_BACKLIGHT}/max_brightness" 2>/dev/null || echo "")
+    bottom_max=$(cat "${BOTTOM_BACKLIGHT}/max_brightness" 2>/dev/null || echo "")
+
+    if [[ ! "${current}" =~ ^[0-9]+$ ]]; then
+        return 0
+    fi
+    if [[ ! "${top_max}" =~ ^[0-9]+$ || ! "${bottom_max}" =~ ^[0-9]+$ ]]; then
+        echo "$(date) - DISPLAY - WARNING: unreadable max_brightness; skipping sync" >&2
+        return 0
+    fi
 
     if (( top_max > 0 && bottom_max > 0 )); then
         target=$((current * bottom_max / top_max))
@@ -64,11 +72,22 @@ function zenbook-sync-display-backlight() {
 }
 
 function zenbook-watch-display-backlight() {
-    if [ ! -r "${TOP_BACKLIGHT}/brightness" ]; then
-        echo "$(date) - DISPLAY - Top-panel brightness interface not found; brightness sync disabled"
-        return 0
+    local top_name last_val="" cur_val
+    local warned_missing=0
+
+    # Stay alive even if sysfs appears late (resume / driver probe). Exiting would
+    # take down the daemon under wait -n supervision.
+    while [ ! -r "${TOP_BACKLIGHT}/brightness" ]; do
+        if [[ "${warned_missing}" -eq 0 ]]; then
+            echo "$(date) - DISPLAY - Top-panel brightness interface not found; waiting" >&2
+            warned_missing=1
+        fi
+        sleep 5
+    done
+    if [[ "${warned_missing}" -eq 1 ]]; then
+        echo "$(date) - DISPLAY - Top-panel brightness interface ready"
     fi
-    local top_name
+
     top_name=$(basename "${TOP_BACKLIGHT}")
 
     if command -v udevadm >/dev/null 2>&1; then
@@ -83,7 +102,6 @@ function zenbook-watch-display-backlight() {
             sleep 1
         done
     else
-        local last_val="" cur_val
         while true; do
             cur_val=$(cat "${TOP_BACKLIGHT}/brightness" 2>/dev/null || echo "")
             if [[ -n "${cur_val}" && "${cur_val}" != "${last_val}" ]]; then

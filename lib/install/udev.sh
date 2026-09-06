@@ -73,7 +73,8 @@ zenbook-configure-udev-keyboard() {
     sudo udevadm trigger --subsystem-match=hidraw --action=add >/dev/null 2>&1 || true
     sudo udevadm trigger --subsystem-match=input --action=add >/dev/null 2>&1 || true
 
-    [[ -n "${keyboard_vendor}" && -n "${keyboard_product}" ]]
+    # Known VID:PIDs are always written; live dock detection is informational only.
+    return 0
 }
 
 # GATT WriteValue to claimed HID services breaks BlueZ HOGP input on this keyboard
