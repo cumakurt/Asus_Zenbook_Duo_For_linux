@@ -362,7 +362,7 @@ function zenbook-wait-bt-hid() {
 
 # Undock: wait briefly, connect, if Connected-without-HID do ONE disconnect+connect.
 function zenbook-brighten-kb-for-detach() {
-    local level="${DETACH_BACKLIGHT:-3}"
+    local level="${DETACH_BACKLIGHT:-0}"
     local mac
 
     if zenbook-keyboard-attached; then

@@ -10,8 +10,8 @@ ZENBOOK_LICENSE=${ZENBOOK_LICENSE:-"GPL-3.0-or-later"}
 
 # Default keyboard backlight while docked (0-3)
 DEFAULT_BACKLIGHT=${DEFAULT_BACKLIGHT:-3}
-# Max backlight after undock so the keyboard is visible in the dark (0-3).
-DETACH_BACKLIGHT=${DETACH_BACKLIGHT:-3}
+# Backlight after undock (0-3). Off by default to save battery; raise with zenbook kbb N.
+DETACH_BACKLIGHT=${DETACH_BACKLIGHT:-0}
 
 # Display configuration for ASUS Zenbook Duo UX8406CA
 TOP_OUTPUT=${TOP_OUTPUT:-eDP-1}

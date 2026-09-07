@@ -56,7 +56,7 @@ Default panel modes: `2880x1800@120` (top and bottom; UX8406CA native).
 
 **Problem:** The Duo keyboard backlight is driven by a vendor USB HID `SET_REPORT` command. There is no portable desktop setting for levels `0–3`, and older approaches ran a user-writable Python script via passwordless `sudo` (unsafe).
 
-**Solution:** A small native C helper (`kbd-backlight`) sends the same HID report through `hidraw` first (safer for typing), falling back to USB `usbdevfs` when docked. Access uses a `udev` `uaccess` rule matching USB and Bluetooth uhid parents (`KERNELS=="0005:VID:PID.*"`). When docked, an attach retry loop ensures the backlight level is applied reliably as device nodes initialize. On undock the helper only unblocks Bluetooth (`rfkill`) and leaves HOGP to BlueZ — it does **not** call `bluetoothctl` connect/disconnect or GATT (those break HID: Connected without keys). When BT hidraw appears it may set `DETACH_BACKLIGHT` (default `3`) and re-enable Duo xinput nodes.
+**Solution:** A small native C helper (`kbd-backlight`) sends the same HID report through `hidraw` first (safer for typing), falling back to USB `usbdevfs` when docked. Access uses a `udev` `uaccess` rule matching USB and Bluetooth uhid parents (`KERNELS=="0005:VID:PID.*"`). When docked, an attach retry loop ensures the backlight level is applied reliably as device nodes initialize. On undock the helper only unblocks Bluetooth (`rfkill`) and leaves HOGP to BlueZ — it does **not** call `bluetoothctl` connect/disconnect or GATT (those break HID: Connected without keys). When BT hidraw appears it applies `DETACH_BACKLIGHT` (default `0`, off to save battery; raise with `zenbook kbb N` or `export DETACH_BACKLIGHT=N`) and re-enables Duo xinput nodes.
 
 ### 6. Wi-Fi / Bluetooth state fights the keyboard dock workflow
 
@@ -338,6 +338,7 @@ export BOTTOM_MODE=2880x1800
 export TOP_RATE=120
 export BOTTOM_RATE=120
 export DEFAULT_BACKLIGHT=3
+export DETACH_BACKLIGHT=0             # undocked keyboard backlight (0-3)
 export ZENBOOK_BACKEND_OVERRIDE=x11   # force backend (debug)
 ```
 

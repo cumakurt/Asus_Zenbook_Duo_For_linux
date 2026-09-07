@@ -31,7 +31,7 @@ function zenbook-cli() {
         if zenbook-keyboard-attached; then
             zenbook-apply-docked-backlight "${DEFAULT_BACKLIGHT}" || true
         else
-            zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "bt" || true
+            zenbook-set-kb-backlight "${DETACH_BACKLIGHT}" "bt" || true
         fi
         zenbook-check-monitor 1
         zenbook-map-touch-inputs || true

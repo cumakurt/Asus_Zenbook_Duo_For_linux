@@ -139,7 +139,7 @@ function main() {
     if zenbook-keyboard-attached; then
         zenbook-apply-docked-backlight "${DEFAULT_BACKLIGHT}" || true
     else
-        zenbook-set-kb-backlight "${DEFAULT_BACKLIGHT}" "bt" || true
+        zenbook-set-kb-backlight "${DETACH_BACKLIGHT}" "bt" || true
     fi
     # Force apply on startup so a docked keyboard disables eDP-2 immediately.
     zenbook-check-monitor 1
